@@ -221,6 +221,47 @@ document.querySelectorAll(".switch input").forEach(inp=>inp.addEventListener("ch
   const [off,on]=inp.parentElement.querySelectorAll("span");
   off.classList.toggle("on",!inp.checked);on.classList.toggle("on",inp.checked);
 }));
+// Globe drag: Plotly's own handler rotates by the point under the cursor on the
+// sphere, which doesn't exist off the globe, so it jumps/flips at the edge.
+// Replace it with a plain pixel→angle mapping (1 px = 1/radius rad, so the
+// center tracks the cursor) that behaves the same inside and outside the globe.
+// Latitude is clamped at the poles and roll is untouched, so north stays up.
+function geoSub(){const g=gd._fullLayout&&gd._fullLayout.geo;return g&&g._subplot}
+function onGlobeDown(e){
+  if(projType()!=="orthographic") return;
+  if(e.type==="mousedown"&&e.button!==0) return;
+  if(e.touches&&e.touches.length!==1) return;      // leave pinch to Plotly
+  if(e.target.closest(".modebar,.legend")) return;
+  const sp=geoSub(), p=sp&&sp.projection;
+  if(!p) return;
+  e.stopPropagation(); e.preventDefault();          // keep Plotly's drag from starting
+  const pt=e.touches?e.touches[0]:e, x0=pt.clientX, y0=pt.clientY;
+  const r0=p.rotate(), k=180/(Math.PI*p.scale());
+  let moved=false;
+  const move=ev=>{
+    const q=ev.touches?ev.touches[0]:ev;
+    // d3 rotate = [-centerLon, -centerLat, roll]; dragging down/right brings
+    // north/west into view, like grabbing the surface.
+    const lat=Math.max(-90,Math.min(90,r0[1]-(q.clientY-y0)*k));
+    p.rotate([r0[0]+(q.clientX-x0)*k,lat,r0[2]]);
+    moved=true; sp.render(true);
+    if(ev.cancelable) ev.preventDefault();
+  };
+  const evs=e.touches?["touchmove","touchend","touchcancel"]:["mousemove","mouseup"];
+  const up=()=>{
+    window.removeEventListener(evs[0],move);
+    evs.slice(1).forEach(n=>window.removeEventListener(n,up));
+    if(!moved) return;
+    // Store as a GUI edit (like Plotly's own drag) so uirevision keeps it.
+    const r=p.rotate();
+    (Plotly._guiRelayout||Plotly.relayout)(gd,{"geo.projection.rotation.lon":-r[0],"geo.projection.rotation.lat":-r[1]});
+  };
+  window.addEventListener(evs[0],move,{passive:false});
+  evs.slice(1).forEach(n=>window.addEventListener(n,up));
+}
+gd.addEventListener("mousedown",onGlobeDown,true);
+gd.addEventListener("touchstart",onGlobeDown,{capture:true,passive:false});
+
 ["marker","scheme","scale","bystatus","proj"].forEach(id=>$(id).addEventListener("change",render));
 $("bysize").addEventListener("change",()=>{$("scale").disabled=!$("bysize").checked;render()});
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",render);
