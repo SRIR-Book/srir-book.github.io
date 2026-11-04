@@ -149,17 +149,27 @@ function applyPins(){
 }
 new MutationObserver(applyPins).observe(gd,{subtree:true,childList:true,attributes:true,attributeFilter:["d"]});
 
-// Natural Earth: allow horizontal panning only. Plotly pans flat projections by
-// setting projection.translate([x,y]) from its d3 zoom handler, so pin y to its
-// fitted value. Plotly rebuilds the projection on every replot, hence re-wrap
-// after each plot.
+// Natural Earth: while the whole earth fits (not zoomed in), allow horizontal
+// panning only. Plotly pans/zooms flat projections by calling
+// projection.scale(s) then projection.translate([x,y]) from its d3 zoom handler,
+// so when the new scale is at or below the fit scale, shift y to keep the
+// equator on the vertical midline. Zoomed in, translate passes through untouched.
+// Plotly rebuilds the projection on every replot, hence re-wrap after each plot.
 function lockVerticalPan(){
   if(projType()!=="natural earth") return;
   const sp=gd._fullLayout&&gd._fullLayout.geo&&gd._fullLayout.geo._subplot;
   const p=sp&&sp.projection;
   if(!p||p.__latLocked) return;
-  const orig=p.translate, y0=orig.call(p)[1];
-  p.translate=function(t){return arguments.length?orig.call(p,[t[0],y0]):orig.call(p)};
+  const orig=p.translate;
+  p.translate=function(t){
+    if(!arguments.length) return orig.call(p);
+    const r=orig.call(p,t);
+    if(p.scale()<=sp.fitScale*1.001){
+      const lon=p.invert(sp.midPt)[0], eqY=p([lon,0])[1];
+      orig.call(p,[t[0],t[1]-(eqY-sp.midPt[1])]);
+    }
+    return r;
+  };
   p.__latLocked=true;
 }
 
