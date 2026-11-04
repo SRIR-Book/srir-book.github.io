@@ -124,6 +124,9 @@ function figure(){
   const proj=projType();
   const s=SCHEMES[$("scheme").value]||{ocean:css("--ocean"),land:css("--land"),border:css("--border"),coast:css("--coast"),grid:css("--line")};
   return{data:traces,layout:{
+    // Keep the user's zoom/pan across re-renders (size, marker, colors…);
+    // only a projection switch starts from a fresh view.
+    uirevision:proj,
     margin:{l:0,r:0,t:0,b:0},paper_bgcolor:css("--panel"),font:{family:"system-ui,-apple-system,'Segoe UI',sans-serif",color:fg,size:12},
     hoverdistance:30,
     hoverlabel:{bgcolor:css("--panel"),bordercolor:css("--line"),font:{color:fg}},
