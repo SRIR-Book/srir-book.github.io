@@ -190,12 +190,25 @@ function lockVerticalPan(){
   p.__latLocked=true;
 }
 
+// Modebar "reset" target. Plotly saves this only on the first plot (Natural
+// Earth) and never includes roll, so after switching to the globe, reset kept
+// its tilt. Set it for the active projection: north up, equator in the middle.
+const VIEW0={
+  "natural earth":{"center.lon":0,"center.lat":0,"projection.rotation.lon":0},
+  orthographic:{"projection.rotation.lon":0,"projection.rotation.lat":0,"projection.rotation.roll":0}
+};
+function setResetView(){
+  const sp=gd._fullLayout&&gd._fullLayout.geo&&gd._fullLayout.geo._subplot;
+  if(sp) sp.viewInitial={fitbounds:false,"projection.scale":0.9,...VIEW0[projType()]};
+}
+function afterPlot(){lockVerticalPan();setResetView()}
+
 let first=true;
 function render(){
   const f=figure();
   const cfg={responsive:true,displaylogo:false,scrollZoom:true,modeBarButtonsToRemove:["toImage","select2d","lasso2d"]};
-  (first?Plotly.newPlot:Plotly.react)(gd,f.data,f.layout,cfg).then(()=>{applyPins();lockVerticalPan()});
-  if(first) gd.on("plotly_afterplot",lockVerticalPan);
+  (first?Plotly.newPlot:Plotly.react)(gd,f.data,f.layout,cfg).then(()=>{applyPins();afterPlot()});
+  if(first) gd.on("plotly_afterplot",afterPlot);
   first=false;
 }
 // Sliding switches: highlight the label of the active side.
