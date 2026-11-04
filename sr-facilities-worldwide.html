@@ -132,7 +132,9 @@ function figure(){
     hoverdistance:30,
     hoverlabel:{bgcolor:css("--panel"),bordercolor:css("--line"),font:{color:fg}},
     legend:{x:.01,y:.02,bgcolor:css("--panel"),bordercolor:css("--line"),borderwidth:1,font:{size:12}},
-    geo:{projection:{type:proj},resolution:110,showframe:true,framecolor:s.coast,
+    // scale <1 shrinks the fitted map so it never touches the box edges; it is
+    // also what the modebar "reset" button returns to.
+    geo:{projection:{type:proj,scale:0.9},resolution:110,showframe:true,framecolor:s.coast,
       bgcolor:css("--panel"),showocean:true,oceancolor:s.ocean,showland:true,landcolor:s.land,
       showcountries:true,countrycolor:s.border,countrywidth:.5,coastlinecolor:s.coast,coastlinewidth:.6,
       showlakes:true,lakecolor:s.ocean,lataxis:{showgrid:true,gridcolor:s.grid,dtick:30},lonaxis:{showgrid:true,gridcolor:s.grid,dtick:30}}
