@@ -1,0 +1,124 @@
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #1f2933;
+  --muted: #6b7785;
+  --accent: #2563eb;
+  --border: #e3e6ea;
+  --radius: 10px;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --surface: #1d2128;
+    --text: #e6e9ee;
+    --muted: #8b96a3;
+    --accent: #60a5fa;
+    --border: #2b3039;
+    --shadow: none;
+    --shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.site-header {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 3rem 1rem 1.5rem;
+}
+
+.site-header h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+/* Full-width horizontal tiles, stacked one per row */
+.tiles {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+a.tile:hover,
+a.tile:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+  outline: none;
+}
+
+a.tile:focus-visible {
+  border-color: var(--accent);
+}
+
+.tile-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.tile-arrow {
+  color: var(--accent);
+  font-size: 1.25rem;
+  transition: transform 0.15s ease;
+}
+
+a.tile:hover .tile-arrow {
+  transform: translateX(4px);
+}
+
+.tile-disabled {
+  border-left-color: var(--border);
+  color: var(--muted);
+  cursor: default;
+}
+
+.site-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 2rem 1rem;
+}
