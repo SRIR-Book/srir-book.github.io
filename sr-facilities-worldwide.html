@@ -72,6 +72,7 @@ footer{font-size:.75rem;color:var(--muted)}
     <div class="ctl"><span>Size scale</span>
       <label class="switch"><span class="on">√ diameter</span><input type="checkbox" role="switch" id="scale" aria-label="Linear size scale" disabled><span>Linear</span></label></div>
     <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
+    <label class="check"><input type="checkbox" id="srir"> Highlight SR-IR</label>
     <div class="push">
       <label class="ctl"><span>Map colors</span><select id="scheme">
         <option value="theme">Default</option><option value="atlas">Atlas</option><option value="sepia">Sepia</option>
@@ -156,6 +157,15 @@ const URLS={
   "Aladdin (SRC)":"https://en.wikipedia.org/wiki/Synchrotron_Radiation_Center",
   "UVX (LNLS)":"https://en.wikipedia.org/wiki/Brazilian_Synchrotron_Light_Laboratory"
 };
+// Facilities with (or, if decommissioned, that had) a synchrotron-infrared
+// beamline. "Highlight SR-IR" dims every other marker. Names match DATA.
+const SRIR=new Set([
+  "ESRF-EBS","SOLEIL","BESSY II","MLS (PTB)","KARA","Diamond Light Source","SLS 2.0",
+  "Elettra 2.0","ALBA","SOLARIS","SESAME","NSLS-II","ALS (ALS-U upgrade)","CAMD",
+  "Canadian Light Source","Sirius (LNLS)","SPring-8","UVSOR-III","SSRF","HLS-II (NSRL)",
+  "TLS (NSRRC)","Siam Photon Source (SLRI)","SSLS (Helios 2)","Australian Synchrotron",
+  "SRS","LURE (DCI / Super-ACO)","NSLS (X-ray ring)","Aladdin (SRC)","UVX (LNLS)"
+]);
 const STATUSES=[["operating","Operating","--op"],["planned","Planned","--plan"],["decommissioned","Decommissioned","--dec"]];
 // Basemap palettes: ocean, land, borders, coastline, graticule. "theme" follows light/dark.
 const SCHEMES={
@@ -181,6 +191,7 @@ function sizeOf(f){
 }
 function figure(){
   const pin=!$("marker").checked, byStatus=$("bystatus").checked, fg=css("--fg");
+  const hl=$("srir").checked, opac=f=>hl&&!SRIR.has(f.name)?.2:(pin?1:.85);
   const traces=STATUSES.map(([k,label,tok])=>{
     const pts=feats.filter(f=>f.status===k);
     return{type:"scattergeo",mode:"markers",name:label+" ("+pts.length+")",
@@ -189,7 +200,7 @@ function figure(){
         URLS[f.name]||"",URLS[f.name]?"<br><i>Click to open website ↗</i>":""]),
       hovertemplate:"<b>%{customdata[0]}</b><br>%{customdata[1]}, %{customdata[2]}<br>%{customdata[3]}<br>%{customdata[4]} GeV · C = %{customdata[5]} m · Ø ≈ %{customdata[6]} m%{customdata[8]}<extra></extra>",
       marker:{symbol:"circle",size:pts.map(sizeOf),color:byStatus?css(tok):css("--accent"),
-        opacity:pin?1:.85,line:{width:pin?1:.8,color:css("--panel")}},
+        opacity:pts.map(opac),line:{width:pin?1:.8,color:css("--panel")}},
       showlegend:byStatus};
   });
   const proj=projType();
@@ -362,7 +373,7 @@ gd.addEventListener("click",e=>{if(globeDragged){globeDragged=false;e.stopPropag
 gd.addEventListener("mousedown",onGlobeDown,true);
 gd.addEventListener("touchstart",onGlobeDown,{capture:true,passive:false});
 
-["marker","scheme","scale","bystatus","proj"].forEach(id=>$(id).addEventListener("change",render));
+["marker","scheme","scale","bystatus","srir","proj"].forEach(id=>$(id).addEventListener("change",render));
 $("bysize").addEventListener("change",()=>{$("scale").disabled=!$("bysize").checked;render()});
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",render);
 new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
