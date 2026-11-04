@@ -139,7 +139,7 @@ function figure(){
     legend:{x:.01,y:.02,bgcolor:css("--panel"),bordercolor:css("--line"),borderwidth:1,font:{size:12}},
     // scale <1 shrinks the fitted map so it never touches the box edges; it is
     // also what the modebar "reset" button returns to.
-    geo:{projection:{type:proj,scale:0.9},resolution:110,showframe:true,framecolor:s.coast,
+    geo:{projection:{type:proj,scale:0.9},resolution:res,showframe:true,framecolor:s.coast,
       bgcolor:css("--panel"),showocean:true,oceancolor:s.ocean,showland:true,landcolor:s.land,
       showcountries:true,countrycolor:s.border,countrywidth:.5,coastlinecolor:s.coast,coastlinewidth:.6,
       showlakes:true,lakecolor:s.ocean,lataxis:{showgrid:true,gridcolor:s.grid,dtick:30},lonaxis:{showgrid:true,gridcolor:s.grid,dtick:30}}
@@ -206,14 +206,38 @@ function setResetView(){
   const sp=gd._fullLayout&&gd._fullLayout.geo&&gd._fullLayout.geo._subplot;
   if(sp) sp.viewInitial={fitbounds:false,"projection.scale":0.9,...VIEW0[projType()]};
 }
-function afterPlot(){lockVerticalPan();setResetView()}
+// Detail follows zoom: the embedded 1:110m outlines for the overview, Plotly's
+// 1:50m outlines once zoomed in to ZOOM_50M× the default fit. The 50m file is
+// fetched once from cdn.plot.ly; until it arrives (or if it can't be loaded)
+// the map simply stays at 110m.
+const ZOOM_50M=2;
+let res=110, hiResReq=null;
+function wantRes(){const g=gd._fullLayout&&gd._fullLayout.geo;return g&&g.projection.scale>=ZOOM_50M?50:110}
+function loadHiRes(){
+  if(!hiResReq) hiResReq=fetch("https://cdn.plot.ly/world_50m.json")
+    .then(r=>{if(!r.ok) throw new Error("HTTP "+r.status);return r.json()})
+    .then(t=>{window.PlotlyGeoAssets.topojson.world_50m=t})
+    .catch(e=>{hiResReq=null;throw e});
+  return hiResReq;
+}
+function updateRes(){
+  if(wantRes()===res) return;
+  if(res===50){res=110;setTimeout(render);return}
+  loadHiRes().then(()=>{if(wantRes()===50&&res!==50){res=50;render()}}).catch(()=>{});
+}
+
+function afterPlot(){lockVerticalPan();setResetView();updateRes()}
 
 let first=true;
 function render(){
   const f=figure();
   const cfg={responsive:true,displaylogo:false,scrollZoom:true,modeBarButtonsToRemove:["toImage","select2d","lasso2d"]};
   (first?Plotly.newPlot:Plotly.react)(gd,f.data,f.layout,cfg).then(()=>{applyPins();afterPlot()});
-  if(first) gd.on("plotly_afterplot",afterPlot);
+  if(first){
+    gd.on("plotly_afterplot",afterPlot);
+    // Scroll/drag zoom ends with a relayout but no replot, so check here too.
+    gd.on("plotly_relayout",e=>{if(Object.keys(e).some(k=>k.startsWith("geo.projection.scale")))updateRes()});
+  }
   first=false;
 }
 // Sliding switches: highlight the label of the active side.
