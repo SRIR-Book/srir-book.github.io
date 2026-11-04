@@ -40,6 +40,8 @@ select:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid 
 .switch input::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--panel);transition:transform .15s}
 .switch input:checked::after{transform:translateX(18px)}
 @media (prefers-reduced-motion:reduce){.switch input::after{transition:none}}
+.switch:has(input:disabled){opacity:.45;cursor:default}
+.switch input:disabled{cursor:default}
 button{cursor:pointer;background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:500}
 button:disabled{opacity:.45;cursor:default}
 .push{margin-left:auto;display:flex;align-items:center;gap:10px}
@@ -58,16 +60,15 @@ footer{font-size:.75rem;color:var(--muted)}
   </header>
   <div class="controls">
     <div class="ctl"><span>Projection</span>
-      <label class="switch"><span id="lflat" class="on">Natural Earth</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span id="lglobe">Globe</span></label></div>
+      <label class="switch"><span class="on">Natural Earth</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label></div>
     <label class="ctl"><span>Map colors</span><select id="scheme">
       <option value="theme">Default</option><option value="atlas">Atlas</option><option value="sepia">Sepia</option>
       <option value="gray">Grayscale</option><option value="forest">Forest</option><option value="night">Night</option></select></label>
-    <label class="ctl"><span>Marker</span><select id="marker">
-      <option value="pin">Pin</option><option value="circle">Circle</option><option value="square">Square</option>
-      <option value="diamond">Diamond</option><option value="triangle-up">Triangle</option><option value="star">Star</option>
-      <option value="cross">Cross</option></select></label>
+    <div class="ctl"><span>Marker</span>
+      <label class="switch"><span class="on">Pin</span><input type="checkbox" role="switch" id="marker" aria-label="Circle markers"><span>Circle</span></label></div>
     <label class="check"><input type="checkbox" id="bysize"> Size by ring diameter</label>
-    <label class="ctl"><span>Size scale</span><select id="scale" disabled><option value="sqrt">√ diameter</option><option value="lin">Linear</option></select></label>
+    <div class="ctl"><span>Size scale</span>
+      <label class="switch"><span class="on">√ diameter</span><input type="checkbox" role="switch" id="scale" aria-label="Linear size scale" disabled><span>Linear</span></label></div>
     <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
     <div class="push"><span class="msg" id="msg" aria-live="polite"></span><button id="save" disabled>Save PNG</button></div>
   </div>
@@ -106,18 +107,18 @@ $("count").textContent=STATUSES.map(([k,l])=>feats.filter(f=>f.status===k).lengt
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 function sizeOf(f){
   if(!$("bysize").checked) return 11;
-  const t=$("scale").value==="lin"?f.diam/dmax:Math.sqrt(f.diam/dmax);
+  const t=$("scale").checked?f.diam/dmax:Math.sqrt(f.diam/dmax);
   return 5+33*t;
 }
 function figure(){
-  const pin=$("marker").value==="pin", byStatus=$("bystatus").checked, fg=css("--fg");
+  const pin=!$("marker").checked, byStatus=$("bystatus").checked, fg=css("--fg");
   const traces=STATUSES.map(([k,label,tok])=>{
     const pts=feats.filter(f=>f.status===k);
     return{type:"scattergeo",mode:"markers",name:label+" ("+pts.length+")",
       lon:pts.map(f=>f.lon),lat:pts.map(f=>f.lat),
       customdata:pts.map(f=>[f.name,f.city,f.country,label,f.energy_GeV,f.circumference_m,f.diam.toFixed(0)]),
       hovertemplate:"<b>%{customdata[0]}</b><br>%{customdata[1]}, %{customdata[2]}<br>%{customdata[3]}<br>%{customdata[4]} GeV · C = %{customdata[5]} m · Ø ≈ %{customdata[6]} m<extra></extra>",
-      marker:{symbol:pin?"circle":$("marker").value,size:pts.map(sizeOf),color:byStatus?css(tok):css("--accent"),
+      marker:{symbol:"circle",size:pts.map(sizeOf),color:byStatus?css(tok):css("--accent"),
         opacity:pin?1:.85,line:{width:pin?1:.8,color:css("--panel")}},
       showlegend:byStatus};
   });
@@ -143,7 +144,18 @@ function pinD(r){
   return `M0,0L${-x},${y}A${R},${R} 0 1,1 ${x},${y}Z M${h},${cy}A${h},${h} 0 1,0 ${-h},${cy}A${h},${h} 0 1,0 ${h},${cy}Z`;
 }
 function applyPins(){
-  if($("marker").value!=="pin") return;
+  if($("marker").checked){
+    // Circle mode: restore any point Plotly didn't redraw since it was a pin.
+    gd.querySelectorAll("path.point").forEach(el=>{
+      if(!el.__pinD) return;
+      if(el.getAttribute("d")===el.__pinD){
+        const d=el.__data__, r=+((d&&d.mrc)||5.5).toFixed(2);
+        el.setAttribute("d",`M${r},0A${r},${r} 0 1,1 0,-${r}A${r},${r} 0 0,1 ${r},0Z`);
+      }
+      el.__pinD=null; el.style.fillRule="";
+    });
+    return;
+  }
   gd.querySelectorAll("path.point").forEach(el=>{
     if(el.getAttribute("d")===el.__pinD) return;
     const d=el.__data__, r=(d&&d.mrc)||5.5;
@@ -184,8 +196,12 @@ function render(){
   if(first) gd.on("plotly_afterplot",lockVerticalPan);
   first=false;
 }
-["marker","scheme","scale","bystatus"].forEach(id=>$(id).addEventListener("change",render));
-$("proj").addEventListener("change",()=>{const g=$("proj").checked;$("lglobe").classList.toggle("on",g);$("lflat").classList.toggle("on",!g);render()});
+// Sliding switches: highlight the label of the active side.
+document.querySelectorAll(".switch input").forEach(inp=>inp.addEventListener("change",()=>{
+  const [off,on]=inp.parentElement.querySelectorAll("span");
+  off.classList.toggle("on",!inp.checked);on.classList.toggle("on",inp.checked);
+}));
+["marker","scheme","scale","bystatus","proj"].forEach(id=>$(id).addEventListener("change",render));
 $("bysize").addEventListener("change",()=>{$("scale").disabled=!$("bysize").checked;render()});
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",render);
 new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
