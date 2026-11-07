@@ -85,6 +85,7 @@ footer{font-size:.75rem;color:var(--muted)}
 .legend button{all:unset;display:flex;align-items:center;gap:8px;padding:1px 2px;cursor:pointer;color:var(--fg);border-radius:3px}
 .legend button:focus-visible{outline:2px solid var(--accent)}
 .legend button.off{opacity:.4}
+.controls button.secondary{background:var(--bg);color:var(--fg);border-color:var(--line)}
 .legend i{width:10px;height:10px;border-radius:50%;flex:none;margin:0 2px}
 .legend img{width:14px;height:auto;flex:none}
 .legend hr{border:0;border-top:1px solid var(--line);margin:3px 0}
@@ -107,7 +108,7 @@ footer{font-size:.75rem;color:var(--muted)}
       <label class="switch"><span class="on">√ diameter</span><input type="checkbox" role="switch" id="scale" aria-label="Linear size scale" disabled><span>Linear</span></label></div>
     <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
     <label class="check"><input type="checkbox" id="srir"> Highlight infrared</label>
-    <div class="push"><span class="msg" id="msg" aria-live="polite"></span><button id="save" disabled>Save PNG</button></div>
+    <div class="push"><span class="msg" id="msg" aria-live="polite"></span><button id="dldata" class="secondary">Download data</button><button id="save" disabled>Save PNG</button></div>
   </div>
   <div class="mapwrap">
     <div id="map"></div>
@@ -559,17 +560,59 @@ async function savePNG(){
   }
   return new Promise(ok=>c.toBlob(ok,"image/png"));
 }
+function download(blob,name){
+  const u=URL.createObjectURL(blob), a=document.createElement("a"); a.href=u; a.download=name;
+  document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
 $("save").addEventListener("click",async()=>{
   $("save").disabled=true; $("msg").textContent="Rendering…";
   try{
     const blob=await savePNG(), name="synchrotrons-"+(globe()?"globe":"mercator")+".png";
-    const u=URL.createObjectURL(blob), a=document.createElement("a"); a.href=u; a.download=name;
-    document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
-    $("msg").textContent="Saved "+name;
+    download(blob,name); $("msg").textContent="";
   }catch(e){$("msg").textContent="Couldn't save the PNG"+(e&&e.message?": "+e.message:".")}
   finally{$("save").disabled=false}
 });
 
-window.__atlas={map,get groups(){return groups},update,savePNG};   // handy for debugging in the console
+// ---- Download data: the two facility files, unchanged, in one zip ---------------
+const DATA_FILES=["data/facilities.geojson","data/free-electron-lasers.geojson"];
+const CRC_TABLE=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+function crc32(b){let c=~0;for(let i=0;i<b.length;i++)c=CRC_TABLE[(c^b[i])&255]^(c>>>8);return(~c)>>>0}
+// Minimal ZIP writer (files stored uncompressed; small text files, so no library needed).
+function zipFiles(files){                            // files: [{name, data: Uint8Array}]
+  const enc=new TextEncoder(), local=[], central=[], d=new Date();
+  const time=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+  const date=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
+  let offset=0;
+  for(const f of files){
+    const name=enc.encode(f.name), crc=crc32(f.data), n=f.data.length;
+    const h=new DataView(new ArrayBuffer(30));                       // local file header
+    [[0,0x04034b50,4],[4,20,2],[6,0x0800,2],[8,0,2],[10,time,2],[12,date,2],[14,crc,4],[18,n,4],[22,n,4],[26,name.length,2],[28,0,2]]
+      .forEach(([o,v,w])=>w===4?h.setUint32(o,v,true):h.setUint16(o,v,true));
+    local.push(h,name,f.data);
+    const c=new DataView(new ArrayBuffer(46));                       // central directory entry
+    [[0,0x02014b50,4],[4,20,2],[6,20,2],[8,0x0800,2],[10,0,2],[12,time,2],[14,date,2],[16,crc,4],[20,n,4],[24,n,4],[28,name.length,2],[42,offset,4]]
+      .forEach(([o,v,w])=>w===4?c.setUint32(o,v,true):c.setUint16(o,v,true));
+    central.push(c,name);
+    offset+=30+name.length+n;
+  }
+  const size=central.reduce((t,p)=>t+p.byteLength,0), e=new DataView(new ArrayBuffer(22));   // end of central directory
+  [[0,0x06054b50,4],[8,files.length,2],[10,files.length,2],[12,size,4],[16,offset,4]].forEach(([o,v,w])=>w===4?e.setUint32(o,v,true):e.setUint16(o,v,true));
+  return new Blob([...local,...central,e],{type:"application/zip"});
+}
+async function dataZip(){
+  const files=await Promise.all(DATA_FILES.map(async u=>{
+    const r=await fetch(u); if(!r.ok) throw new Error(u+": HTTP "+r.status);
+    return{name:u.split("/").pop(),data:new Uint8Array(await r.arrayBuffer())};
+  }));
+  return zipFiles(files);
+}
+$("dldata").addEventListener("click",async()=>{
+  $("dldata").disabled=true;
+  try{download(await dataZip(),"synchrotron-atlas-data.zip"); $("msg").textContent=""}
+  catch(e){$("msg").textContent="Couldn't build the data zip"+(e&&e.message?": "+e.message:".")}
+  finally{$("dldata").disabled=false}
+});
+
+window.__atlas={map,get groups(){return groups},update,savePNG,dataZip};   // handy for debugging in the console
 </script>
 </body></html>
