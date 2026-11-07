@@ -242,6 +242,35 @@ function regroup(){
   if(sig===groupSig) return;
   groups=g; groupSig=sig; closePop(); setTimeout(render);
 }
+// Badge: color and its offset (px) from the coordinate to the marker's top-right.
+const BADGE="#e5484d";
+function badgeOffset(f,pin){
+  const r=sizeOf(f)/2;
+  if(pin){const R=Math.max(4,r*1.1);return[+(R*.9).toFixed(1),+(-R*2.9).toFixed(1)]}   // pin head (see pinD)
+  return[+(r*.8).toFixed(1),+(-r*.8).toFixed(1)];
+}
+const isBadge=el=>{const t=el.closest(".trace"), cd=t&&t.__data__;return !!(cd&&cd[0]&&cd[0].trace&&cd[0].trace.meta==="badge")};
+function applyBadges(){
+  gd.querySelectorAll(".trace").forEach(t=>{
+    const cd=t.__data__, tr=cd&&cd[0]&&cd[0].trace;
+    if(!tr||tr.meta!=="badge") return;
+    t.querySelectorAll("path.point").forEach((el,i)=>{
+      const o=tr.customdata[i], r=(el.__data__&&el.__data__.mrc)||8;
+      if(!o) return;
+      const d=`M${o[0]+r},${o[1]}A${r},${r} 0 1,1 ${o[0]-r},${o[1]}A${r},${r} 0 1,1 ${o[0]+r},${o[1]}Z`;
+      if(el.getAttribute("d")!==d) el.setAttribute("d",d);
+    });
+    // Each number is <g transform="translate(0,dy)"><text transform="translate(x,y)">;
+    // Plotly positions the <text>, so shift its wrapper <g> to the dot.
+    t.querySelectorAll("text").forEach((el,i)=>{
+      const o=tr.customdata[i], w=el.parentNode;
+      if(!o||!w||w===t) return;
+      const tf=`translate(${o[0]},${o[1]+3.5})`;
+      if(w.getAttribute("transform")!==tf) w.setAttribute("transform",tf);
+      el.style.fontWeight="700";
+    });
+  });
+}
 function hoverHtml(g){
   const ir=f=>$("srir").checked&&SRIR.has(f.name)?" · SR-IR":"";
   if(g.length===1){
@@ -271,12 +300,16 @@ function figure(){
         opacity:pts.map(x=>opac(x.g)),line:{width:pin?1:.8,color:css("--panel")}},
       showlegend:byStatus};
   });
-  // Count badges, drawn after (above) the markers. The invisible marker gives
-  // Plotly the size to offset the text from.
+  // Count badges (app-icon notification style): a red dot with a white number
+  // at the top-right of the group's marker, drawn after (above) the markers.
+  // Plotly can't offset geo markers in pixels, so applyBadges() moves the dot
+  // and number by the offset stored in customdata.
   const multi=lead.filter(x=>x.g.length>1);
-  traces.push({type:"scattergeo",mode:"markers+text",lon:multi.map(x=>x.f.lon),lat:multi.map(x=>x.f.lat),
-    text:multi.map(x=>String(x.g.length)),textposition:"bottom right",textfont:{size:11,color:fg},
-    marker:{size:multi.map(x=>sizeOf(x.f)),opacity:0},hoverinfo:"skip",showlegend:false});
+  traces.push({type:"scattergeo",mode:"markers+text",meta:"badge",lon:multi.map(x=>x.f.lon),lat:multi.map(x=>x.f.lat),
+    text:multi.map(x=>String(x.g.length)),textposition:"middle center",textfont:{size:10,color:"#fff"},
+    customdata:multi.map(x=>badgeOffset(x.f,pin)),
+    marker:{size:multi.map(x=>x.g.length>9?18:16),color:BADGE,opacity:1,line:{width:1.5,color:"#fff"}},
+    hoverinfo:"skip",showlegend:false});
   const proj=projType();
   const s=SCHEMES[$("scheme").value]||{ocean:css("--ocean"),land:css("--land"),border:css("--border"),coast:css("--coast"),grid:css("--line")};
   return{data:traces,layout:{
@@ -315,12 +348,12 @@ function applyPins(){
     return;
   }
   gd.querySelectorAll("path.point").forEach(el=>{
-    if(el.getAttribute("d")===el.__pinD) return;
+    if(el.getAttribute("d")===el.__pinD||isBadge(el)) return;
     const d=el.__data__, r=(d&&d.mrc)||5.5;
     el.__pinD=pinD(r); el.setAttribute("d",el.__pinD); el.style.fillRule="evenodd";
   });
 }
-new MutationObserver(applyPins).observe(gd,{subtree:true,childList:true,attributes:true,attributeFilter:["d"]});
+new MutationObserver(()=>{applyPins();applyBadges()}).observe(gd,{subtree:true,childList:true,attributes:true,attributeFilter:["d"]});
 
 // Natural Earth: while the whole earth fits (not zoomed in), allow horizontal
 // panning only. Plotly pans/zooms flat projections by calling
@@ -402,7 +435,7 @@ let first=true;
 function render(){
   const f=figure();
   const cfg={responsive:true,displaylogo:false,scrollZoom:true,modeBarButtonsToRemove:["toImage","select2d","lasso2d"]};
-  (first?Plotly.newPlot:Plotly.react)(gd,f.data,f.layout,cfg).then(()=>{applyPins();afterPlot()});
+  (first?Plotly.newPlot:Plotly.react)(gd,f.data,f.layout,cfg).then(()=>{applyPins();applyBadges();afterPlot()});
   if(first){
     gd.on("plotly_afterplot",afterPlot);
     // Facility links: click a marker to open its website; pointer cursor on hover.
