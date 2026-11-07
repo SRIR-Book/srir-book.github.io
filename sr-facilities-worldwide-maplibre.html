@@ -66,6 +66,10 @@ footer{font-size:.75rem;color:var(--muted)}
 #map{background:var(--panel)}
 .badges{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden;border-radius:var(--radius)}
 .maplibregl-popup{z-index:2}   /* hover box above the count badges */
+/* Fullscreen: the whole map area (map, badges, legend, link menu) fills the screen */
+.mapwrap:fullscreen{background:var(--panel)}
+.mapwrap:fullscreen #map{height:100vh;border:0;border-radius:0;box-shadow:none}
+.mapwrap:fullscreen .badges{border-radius:0}
 .badge{position:absolute;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#e5484d;color:#fff;border:1.5px solid #fff;font:700 10px/13px var(--sans);text-align:center;transform:translate(-50%,-50%);box-shadow:0 1px 2px rgba(0,0,0,.3)}
 .legend{position:absolute;left:10px;bottom:10px;z-index:2;display:grid;gap:2px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-size:12px}
 .legend button{all:unset;display:flex;align-items:center;gap:8px;padding:1px 2px;cursor:pointer;color:var(--fg);border-radius:3px}
@@ -98,8 +102,8 @@ footer{font-size:.75rem;color:var(--muted)}
     <div id="map"></div>
     <div id="badges" class="badges"></div>
     <div id="legend" class="legend"></div>
+    <div id="pop" class="pop" hidden></div>
   </div>
-  <div id="pop" class="pop" hidden></div>
 </div>
 
 <script type="module">
@@ -245,6 +249,7 @@ const map=new maplibregl.Map({
 map.touchZoomRotate.disableRotation();               // pinch zooms but doesn't twist
 map.keyboard.disableRotation();
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-right");
+map.addControl(new maplibregl.FullscreenControl({container:document.querySelector(".mapwrap")}),"top-right");
 // Reset view (like Plotly's home button): world view, north up.
 map.addControl({
   onAdd(){const d=document.createElement("div");d.className="maplibregl-ctrl maplibregl-ctrl-group";
