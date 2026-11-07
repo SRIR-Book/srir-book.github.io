@@ -240,21 +240,23 @@ const homeZoom=()=>{
                :Math.max(0,Math.log2(el.clientWidth/512)-.15);
 };
 const HOME={center:[10,25]};
-// Flat map limits (replaces MapLibre's default, which keeps the world filling
-// the whole box and so always crops the polar regions). Zoom out until the
-// whole Mercator world (±85°) fits with a small margin; if the world is smaller
-// than the box along an axis, keep it centered on that axis, otherwise stop
-// panning at its edge. No world copies are drawn (renderWorldCopies:false).
-const MAX_LAT=85.051129;
+// Flat map limits (replaces MapLibre's default). Vertically the view never goes
+// past the Arctic / Antarctic Circles (±66.56°): zooming out stops when the box
+// spans exactly circle to circle, and panning stops at the circles, so the polar
+// regions are never shown. Horizontally panning stops at the date line; on a box
+// wider than the world at that zoom, the world stays centered. No world copies
+// are drawn (renderWorldCopies:false). The globe is not limited.
+const MAX_LAT=85.051129, POLAR_CIRCLE=66.5634;
 const mercY=lat=>{const s=Math.sin(Math.max(-MAX_LAT,Math.min(MAX_LAT,lat))*Math.PI/180);return .5-Math.log((1+s)/(1-s))/(4*Math.PI)};
 const latFromY=y=>Math.atan(Math.sinh(Math.PI*(1-2*y)))*180/Math.PI;
 function constrainFlat(lngLat,zoom){
   if(globe()) return{center:lngLat,zoom};
   const el=$("map"), W=el.clientWidth, H=el.clientHeight;
-  zoom=Math.max(zoom,Math.log2(.95*Math.min(W,H)/512));
-  const ws=512*2**zoom;                                 // world size in px at this zoom
-  const axis=(v,view)=>ws<=view?.5:Math.min(Math.max(v,view/2/ws),1-view/2/ws);
-  const x=axis((lngLat.lng+180)/360,W), y=axis(mercY(lngLat.lat),H);
+  const yN=mercY(POLAR_CIRCLE), yS=mercY(-POLAR_CIRCLE);           // 0..1 world square
+  zoom=Math.max(zoom,Math.log2(H/((yS-yN)*512)));                  // box ≤ circle-to-circle tall
+  const ws=512*2**zoom;                                             // world size in px at this zoom
+  const x=ws<=W?.5:Math.min(Math.max((lngLat.lng+180)/360,W/2/ws),1-W/2/ws);
+  const y=Math.min(Math.max(mercY(lngLat.lat),yN+H/2/ws),yS-H/2/ws);
   return{center:new maplibregl.LngLat(x*360-180,latFromY(y)),zoom};
 }
 const map=new maplibregl.Map({
