@@ -337,6 +337,8 @@ function positionBadges(){
     if(!vis) return;
     const q=map.project([f.lon,f.lat]), s=pinScale(f), w=PIN_W*s, h=PIN_H*s;
     el.textContent=g.length; el.style.left=(q.x+w*.42)+"px"; el.style.top=(q.y-h+w*.12)+"px";
+    // Highlight SR-IR: the badge stays solid only if every facility in the group has an IR beamline.
+    el.style.opacity=$("srir").checked&&!g.every(x=>SRIR.has(x.name))?.25:1;
   });
 }
 
@@ -447,11 +449,13 @@ async function savePNG(){
   for(const el of badgeLayer.children){
     if(el.hidden) continue;
     const x=parseFloat(el.style.left), y=parseFloat(el.style.top);
+    ctx.globalAlpha=parseFloat(el.style.opacity||1);
     ctx.beginPath(); ctx.arc(x,y,8,0,2*Math.PI); ctx.fillStyle="#e5484d"; ctx.fill();
     ctx.lineWidth=1.5; ctx.strokeStyle="#fff"; ctx.stroke();
     ctx.fillStyle="#fff"; ctx.font=`700 10px ${css("--sans")}`; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(el.textContent,x,y+.5);
   }
+  ctx.globalAlpha=1;
   const attr=(document.querySelector(".maplibregl-ctrl-attrib-inner")||{}).textContent||"";   // the style's own credits
   if(attr){
     ctx.font=`10px ${css("--sans")}`; ctx.textAlign="right"; ctx.textBaseline="bottom";
