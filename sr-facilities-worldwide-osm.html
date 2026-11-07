@@ -76,6 +76,17 @@ footer{font-size:.75rem;color:var(--muted)}
   </header>
   <div class="controls">
     <label class="check"><input type="checkbox" id="osm"> Use OpenStreetMap</label>
+    <label class="ctl"><span>Tile style</span><select id="osmstyle" disabled>
+      <option value="open-street-map">OpenStreetMap</option>
+      <option value="carto-positron">Light (CARTO Positron)</option>
+      <option value="carto-darkmatter">Dark (CARTO Dark Matter)</option>
+      <option value="carto-voyager">Voyager (CARTO)</option>
+      <option value="carto-positron-nolabels">Light, no labels</option>
+      <option value="carto-darkmatter-nolabels">Dark, no labels</option>
+      <option value="carto-voyager-nolabels">Voyager, no labels</option>
+      <option value="satellite">Satellite (Esri)</option>
+      <option value="satellite-streets">Satellite with labels</option>
+      <option value="white-bg">Blank</option></select></label>
     <div class="ctl"><span>Projection</span>
       <label class="switch"><span class="on">Natural Earth</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label></div>
     <div class="ctl"><span>Marker</span>
@@ -337,7 +348,7 @@ function figure(){
     hoverdistance:30,
     hoverlabel:{bgcolor:css("--panel"),bordercolor:css("--line"),font:{color:fg}},
     legend:{x:.01,y:.02,bgcolor:css("--panel"),bordercolor:css("--line"),borderwidth:1,font:{size:12}},
-    map:{style:"open-street-map",center:{lon:10,lat:25},zoom:.9}
+    map:{style:$("osmstyle").value,center:{lon:10,lat:25},zoom:.9}
   }};
   const s=SCHEMES[$("scheme").value]||{ocean:css("--ocean"),land:css("--land"),border:css("--border"),coast:css("--coast"),grid:css("--line")};
   return{data:traces,layout:{
@@ -572,8 +583,10 @@ gd.addEventListener("mousedown",onGlobeDown,true);
 gd.addEventListener("touchstart",onGlobeDown,{capture:true,passive:false});
 
 $("proj").addEventListener("change",()=>{globeRot={lon:0,lat:0}});
+$("osmstyle").addEventListener("change",render);
 $("osm").addEventListener("change",()=>{
   ["proj","marker","scheme"].forEach(id=>{$(id).disabled=useOSM()});
+  $("osmstyle").disabled=!useOSM();
   groupSig="#"; closePop(); render(); positionBadges();
   // The tile map is created asynchronously; hook it as soon as it exists.
   if(useOSM()){const t0=Date.now(),iv=setInterval(()=>{if(mapSub()||Date.now()-t0>10000){clearInterval(iv);hookMap();regroup();positionBadges()}},100)}
