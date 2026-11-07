@@ -64,7 +64,8 @@ footer{font-size:.75rem;color:var(--muted)}
 /* MapLibre version: overlays on the map */
 .mapwrap{position:relative}
 #map{background:var(--panel)}
-.badges{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:var(--radius)}
+.badges{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden;border-radius:var(--radius)}
+.maplibregl-popup{z-index:2}   /* hover box above the count badges */
 .badge{position:absolute;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#e5484d;color:#fff;border:1.5px solid #fff;font:700 10px/13px var(--sans);text-align:center;transform:translate(-50%,-50%);box-shadow:0 1px 2px rgba(0,0,0,.3)}
 .legend{position:absolute;left:10px;bottom:10px;z-index:2;display:grid;gap:2px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-size:12px}
 .legend button{all:unset;display:flex;align-items:center;gap:8px;padding:1px 2px;cursor:pointer;color:var(--fg);border-radius:3px}
@@ -227,15 +228,15 @@ map.addControl({
 // led by the highest-priority facility (operating > planned > decommissioned,
 // then larger ring). Hover lists all, click opens a link menu, a badge shows the count.
 let groups=[];
-function visible(f){                                 // globe: is the point on the near side?
+function visible(f,margin=.02){                      // globe: is the point on the near side?
   if(!globe()) return true;
   const c=map.getCenter(), r=Math.PI/180, lo=f.lon*r, la=f.lat*r, clo=c.lng*r, cla=c.lat*r;
-  return Math.sin(la)*Math.sin(cla)+Math.cos(la)*Math.cos(cla)*Math.cos(lo-clo)>.02;
+  return Math.sin(la)*Math.sin(cla)+Math.cos(la)*Math.cos(cla)*Math.cos(lo-clo)>margin;
 }
 function computeGroups(){
   const list=feats.filter(f=>!hidden.has(f.status)).sort((a,b)=>RANK[a.status]-RANK[b.status]||b.diam-a.diam);
   const xy=new Map(list.map(f=>{const q=visible(f)?map.project([f.lon,f.lat]):null;return[f,q&&[q.x,q.y]]}));
-  const thr=(a,b)=>Math.max(6,(sizeOf(a)+sizeOf(b))/2*.5);
+  const thr=(a,b)=>Math.max(6,(pinScale(a)+pinScale(b))/2*PIN_W*.5);   // half a pin head
   const out=[], used=new Set();
   for(const f of list){
     if(used.has(f)) continue;
@@ -264,24 +265,56 @@ function hoverHtml(g){
 }
 
 // Marker layer: one circle per group leader, drawn operating-on-top.
+// ---- Pins (Google-Maps style): teardrop, darker outline, dark center dot ------
+// One icon per color, drawn on a canvas at 2× and tinted from the page's status
+// colors; icon-size scales it per marker. At size 1 a pin is 14.5 × 22.5 px.
+const PIN=new Path2D("M13.5 0C6.04 0 0 6.04 0 13.5C0 23.6 13.5 43 13.5 43S27 23.6 27 13.5C27 6.04 20.96 0 13.5 0Z");
+const PIN_W=14.5, PIN_H=22.5;
+const pinScale=f=>Math.sqrt(sizeOf(f)/11);         // gentler than linear: ring-size pins stay 0.7–1.9×
+function shade(hex,k){                               // darken a #rrggbb color by k (0..1)
+  const n=parseInt(hex.replace("#","").slice(0,6),16);
+  const c=[n>>16,n>>8&255,n&255].map(v=>Math.round(v*(1-k)));
+  return`rgb(${c.join(",")})`;
+}
+function pinImage(color){
+  const k=2, c=document.createElement("canvas"); c.width=29*k; c.height=45*k;
+  const x=c.getContext("2d"); x.scale(k,k); x.translate(1,1);
+  x.fillStyle=color; x.fill(PIN);
+  x.lineWidth=1.2; x.strokeStyle=shade(color,.35); x.stroke(PIN);
+  x.beginPath(); x.arc(13.5,13.5,4.8,0,2*Math.PI); x.fillStyle=shade(color,.5); x.fill();
+  return x.getImageData(0,0,c.width,c.height);
+}
+const pinColors={};                                  // icon name -> color it was drawn with
+function ensurePins(){
+  const want=Object.fromEntries([...STATUSES.map(([k,,t])=>["pin-"+k,css(t)]),["pin-accent",css("--accent")]]);
+  for(const [name,color] of Object.entries(want)){
+    if(map.hasImage(name)&&pinColors[name]===color) continue;
+    const img=pinImage(color);
+    map.hasImage(name)?map.updateImage(name,img):map.addImage(name,img,{pixelRatio:2});
+    pinColors[name]=color;
+  }
+}
+
 function featureCollection(){
-  const byStatus=$("bystatus").checked, hl=$("srir").checked, tok=Object.fromEntries(STATUSES.map(([k,,t])=>[k,t]));
+  const byStatus=$("bystatus").checked, hl=$("srir").checked;
   return{type:"FeatureCollection",features:groups.map((g,i)=>{const f=g[0];return{type:"Feature",
     geometry:{type:"Point",coordinates:[f.lon,f.lat]},
-    properties:{gi:i,r:sizeOf(f)/2,color:byStatus?css(tok[f.status]):css("--accent"),
-      op:hl&&!g.some(x=>SRIR.has(x.name))?.2:.9,z:3-RANK[f.status]}}})};
+    properties:{gi:i,s:pinScale(f),icon:byStatus?"pin-"+f.status:"pin-accent",
+      op:hl&&!g.some(x=>SRIR.has(x.name))?.25:1,z:3-RANK[f.status]}}})};
 }
 function addLayers(){
+  ensurePins();
   if(map.getSource("fac")) return;
   map.addSource("fac",{type:"geojson",data:featureCollection()});
-  map.addLayer({id:"fac",type:"circle",source:"fac",
-    layout:{"circle-sort-key":["get","z"]},
-    paint:{"circle-radius":["get","r"],"circle-color":["get","color"],"circle-opacity":["get","op"],
-      "circle-stroke-width":1,"circle-stroke-color":"#ffffff","circle-stroke-opacity":["get","op"]}});
+  map.addLayer({id:"fac",type:"symbol",source:"fac",
+    layout:{"icon-image":["get","icon"],"icon-size":["get","s"],"icon-anchor":"bottom",
+      "icon-allow-overlap":true,"icon-ignore-placement":true,"symbol-sort-key":["get","z"]},
+    paint:{"icon-opacity":["get","op"]}});
 }
 function update(){                                   // regroup + redraw markers, badges, legend
   if(!map.isStyleLoaded()&&!map.getSource("fac")) return;
   groups=computeGroups();
+  if(map.isStyleLoaded()) ensurePins();               // colors may have changed (dark mode)
   const src=map.getSource("fac");
   if(src) src.setData(featureCollection());
   positionBadges(); drawLegend();
@@ -294,11 +327,11 @@ function positionBadges(){
   while(badgeLayer.children.length<multi.length) badgeLayer.appendChild(document.createElement("span")).className="badge";
   while(badgeLayer.children.length>multi.length) badgeLayer.lastChild.remove();
   multi.forEach((g,i)=>{
-    const f=g[0], el=badgeLayer.children[i], vis=visible(f);
+    const f=g[0], el=badgeLayer.children[i], vis=visible(f,.12);   // MapLibre hides pins a bit before the rim
     el.hidden=!vis;
     if(!vis) return;
-    const q=map.project([f.lon,f.lat]), r=sizeOf(f)/2;
-    el.textContent=g.length; el.style.left=(q.x+r*.8)+"px"; el.style.top=(q.y-r*.8)+"px";
+    const q=map.project([f.lon,f.lat]), s=pinScale(f), w=PIN_W*s, h=PIN_H*s;
+    el.textContent=g.length; el.style.left=(q.x+w*.42)+"px"; el.style.top=(q.y-h+w*.12)+"px";
   });
 }
 
@@ -323,6 +356,9 @@ map.on("mousemove","fac",e=>{
   if(!g) return;
   const lngLat=[g[0].lon,g[0].lat];
   while(Math.abs(e.lngLat.lng-lngLat[0])>180) lngLat[0]+=e.lngLat.lng>lngLat[0]?360:-360;   // world copies
+  const s=pinScale(g[0]), w=PIN_W*s, h=PIN_H*s;
+  tip.setOffset({"bottom":[0,-h-4],"top":[0,4],"left":[w/2+4,-h/2],"right":[-w/2-4,-h/2],
+    "bottom-left":[w/2,-h],"bottom-right":[-w/2,-h],"top-left":[w/2,0],"top-right":[-w/2,0],"center":[0,-h/2]});
   tip.setLngLat(lngLat).setHTML(hoverHtml(g)).addTo(map);
   map.getCanvas().style.cursor=g.length>1||URLS[g[0].name]?"pointer":"";
 });
