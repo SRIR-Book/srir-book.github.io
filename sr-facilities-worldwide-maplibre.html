@@ -66,6 +66,16 @@ footer{font-size:.75rem;color:var(--muted)}
 #map{background:var(--panel)}
 .badges{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden;border-radius:var(--radius)}
 .maplibregl-popup{z-index:2}   /* hover box above the count badges */
+/* Hover box expanded into a link list after clicking a grouped pin */
+.tip-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px}
+.tip-close{all:unset;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0 2px}
+.tip-close:hover,.tip-close:focus-visible{color:var(--fg)}
+.tip-list{display:grid;gap:1px;margin:0 -6px}
+.tip-list a,.tip-list .nolink{display:grid;padding:4px 6px;border-radius:4px;color:var(--fg);text-decoration:none}
+.tip-list a:hover,.tip-list a:focus-visible{background:var(--bg);outline:none}
+.tip-list a .nm::after{content:" ↗";color:var(--accent)}
+.tip-list .st{font-size:11px;color:var(--muted)}
+.tip-list .nolink{color:var(--muted)}
 /* Fullscreen: the whole map area (map, badges, legend, link menu) fills the screen */
 .mapwrap:fullscreen{background:var(--panel)}
 .mapwrap:fullscreen #map{height:100vh;border:0;border-radius:0;box-shadow:none}
@@ -102,7 +112,6 @@ footer{font-size:.75rem;color:var(--muted)}
     <div id="map"></div>
     <div id="badges" class="badges"></div>
     <div id="legend" class="legend"></div>
-    <div id="pop" class="pop" hidden></div>
   </div>
 </div>
 
@@ -256,7 +265,7 @@ function hoverHtml(g){
   }
   return `<b>${g.length} facilities</b><br>`+
     g.map(f=>`${f.name} — ${STATUS_LABEL[f.status]}, ${f.energy_GeV} GeV${ir(f)}`).join("<br>")+
-    "<br><i>Click for links ↗</i>";
+    "<br><i>Click to choose a facility</i>";
 }
 
 // Marker layer: one circle per group leader, drawn operating-on-top.
@@ -347,50 +356,61 @@ $("legend").addEventListener("click",e=>{
 // ---- Interaction ----------------------------------------------------------------
 const tip=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:10,maxWidth:"340px"});
 const groupAt=e=>groups[e.features[0].properties.gi];
-map.on("mousemove","fac",e=>{
-  const g=groupAt(e);
-  if(!g) return;
-  const lngLat=[g[0].lon,g[0].lat];
-  while(Math.abs(e.lngLat.lng-lngLat[0])>180) lngLat[0]+=e.lngLat.lng>lngLat[0]?360:-360;   // world copies
+// The hover box follows the pointer over pins. Clicking a single facility opens
+// its website; clicking a grouped pin "pins" the hover box in place and expands
+// it into a list of links, one per facility. It closes with ×, Esc, a click on
+// the map, or after choosing a link.
+let pinned=null;                                     // the group whose list is open
+function showTip(g,lngLat,html){
   const s=pinScale(g[0]), w=PIN_W*s, h=PIN_H*s;
   tip.setOffset({"bottom":[0,-h-4],"top":[0,4],"left":[w/2+4,-h/2],"right":[-w/2-4,-h/2],
     "bottom-left":[w/2,-h],"bottom-right":[-w/2,-h],"top-left":[w/2,0],"top-right":[-w/2,0],"center":[0,-h/2]});
-  tip.setLngLat(lngLat).setHTML(hoverHtml(g)).addTo(map);
-  map.getCanvas().style.cursor=g.length>1||URLS[g[0].name]?"pointer":"";
-});
-map.on("mouseleave","fac",()=>{tip.remove();map.getCanvas().style.cursor=""});
-map.on("click","fac",e=>{
+  tip.setLngLat(lngLat).setHTML(html).addTo(map);
+}
+function listHtml(g){
+  return `<div class="tip-head"><b>${g.length} facilities</b><button type="button" class="tip-close" aria-label="Close">×</button></div>`+
+    '<div class="tip-list">'+g.map(f=>{
+      const u=URLS[f.name], body=`<span class="nm">${f.name}</span><span class="st">${STATUS_LABEL[f.status]} · ${f.city} · ${f.energy_GeV} GeV</span>`;
+      return u?`<a href="${u}" target="_blank" rel="noopener">${body}</a>`:`<div class="nolink">${body}</div>`;
+    }).join("")+"</div>";
+}
+function unpin(){if(pinned){pinned=null;tip.remove()}}
+map.on("mousemove","fac",e=>{
+  if(pinned) return;                                  // keep the open list where it is
   const g=groupAt(e);
   if(!g) return;
-  if(g.length===1){const u=URLS[g[0].name];if(u) window.open(u,"_blank","noopener");return}
-  const x=e.originalEvent.clientX, y=e.originalEvent.clientY;
-  setTimeout(()=>openPop(g,x,y));
+  showTip(g,[g[0].lon,g[0].lat],hoverHtml(g));
+  map.getCanvas().style.cursor=g.length>1||URLS[g[0].name]?"pointer":"";
 });
-
-// Link menu for a group.
-const pop=$("pop");
-function openPop(g,x,y){
-  pop.innerHTML=g.map(f=>{
-    const u=URLS[f.name], body=`<span class="nm">${f.name}</span><span class="st">${STATUS_LABEL[f.status]} · ${f.city}</span>`;
-    return u?`<a href="${u}" target="_blank" rel="noopener">${body}</a>`:`<div class="nolink">${body}</div>`;
-  }).join("");
-  pop.hidden=false;
-  const w=pop.offsetWidth, h=pop.offsetHeight;
-  pop.style.left=Math.max(8,Math.min(x+10,innerWidth-w-8))+"px";
-  pop.style.top=Math.max(8,Math.min(y+10,innerHeight-h-8))+"px";
+map.on("mouseleave","fac",()=>{map.getCanvas().style.cursor="";if(!pinned) tip.remove()});
+map.on("click",e=>{
+  const hit=map.queryRenderedFeatures(e.point,{layers:["fac"]})[0], g=hit&&groups[hit.properties.gi];
+  if(!g){unpin();return}                               // click on the map: close the list
+  if(g.length===1){unpin();const u=URLS[g[0].name];if(u) window.open(u,"_blank","noopener");return}
+  openList(g);
+  map.getCanvas().style.cursor="";
+});
+function openList(g){
+  pinned=g;
+  showTip(g,[g[0].lon,g[0].lat],listHtml(g));
+  tip.getElement().querySelector(".tip-close").onclick=unpin;
+  tip.getElement().querySelector(".tip-list").onclick=ev=>{if(ev.target.closest("a")) setTimeout(unpin)};
 }
-function closePop(){pop.hidden=true}
-document.addEventListener("click",e=>{if(!pop.hidden&&!pop.contains(e.target))closePop()});
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closePop()});
-pop.addEventListener("click",e=>{if(e.target.closest("a"))setTimeout(closePop)});
-window.addEventListener("scroll",closePop,{passive:true});
+// After a zoom/pan the groups are rebuilt: keep the list open while its pin
+// still leads a group, updating it if members changed; close it otherwise.
+function refreshPinned(){
+  if(!pinned) return;
+  const g=groups.find(x=>x[0]===pinned[0]);
+  if(!g||g.length<2){unpin();return}
+  if(g.length!==pinned.length||g.some((f,i)=>f!==pinned[i])) openList(g); else pinned=g;
+}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")unpin()});
 
 // Once the style is loaded: apply the projection,
 // then add the facility layer on top.
 map.on("style.load",()=>{map.setProjection({type:globe()?"globe":"mercator"});addLayers();update()});
 map.on("move",positionBadges);
-map.on("movestart",closePop);
-map.on("moveend",update);
+map.on("moveend",()=>{update();refreshPinned()});
 map.on("load",()=>{$("save").disabled=false});
 
 // ---- Controls ---------------------------------------------------------------------
