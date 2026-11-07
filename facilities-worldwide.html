@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Accelerator Atlas</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@6.16.0/dist/maplibre-gl.css">
+<style>
+/* Accelerator Atlas (MapLibre). Colors and fonts match index.html / style.css. */
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --fg:#1f2933; --muted:#6b7785; --line:#e3e6ea;
+  --accent:#2563eb; --op:#14907a; --plan:#d99a00; --dec:#7b8894;
+  --radius:10px; --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14171c; --panel:#1d2128; --fg:#e6e9ee; --muted:#8b96a3; --line:#2b3039;
+  --accent:#60a5fa; --op:#2dbf9f; --plan:#f0b429; --dec:#8b98a3; --shadow:none; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14171c; --panel:#1d2128; --fg:#e6e9ee; --muted:#8b96a3; --line:#2b3039;
+  --accent:#60a5fa; --op:#2dbf9f; --plan:#f0b429; --dec:#8b98a3; --shadow:none; color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:2rem 16px;display:grid;gap:12px;max-width:1400px;margin:0 auto}
+
+/* Controls: one row of three boxes (PROJECTION | MARKER | DOWNLOAD) with a gap. */
+.controls{--ctl-h:34px;display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
+.group{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:8px 14px}
+.group-title{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.group.push{margin-left:auto;gap:10px}
+@media (max-width:560px){.group.push{margin-left:0}}
+.msg{font-size:.8rem;color:var(--muted)}
+.msg:empty{display:none}
+.controls button{font:inherit;font-size:.875rem;font-weight:500;height:var(--ctl-h);box-sizing:border-box;padding:0 10px;border-radius:6px;cursor:pointer;
+  background:var(--fg);color:var(--bg);border:1px solid var(--fg)}
+.controls button.secondary{background:var(--bg);color:var(--fg);border-color:var(--line)}
+.controls button:disabled{opacity:.45;cursor:default}
+.controls button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Sliding switches (projection, marker style) */
+.switch{display:flex;align-items:center;gap:8px;font-size:.875rem;height:var(--ctl-h);cursor:pointer;color:var(--muted)}
+.switch .on{color:var(--fg)}
+.switch input{appearance:none;-webkit-appearance:none;width:40px;height:22px;border-radius:11px;background:var(--muted);position:relative;margin:0;cursor:pointer;flex:none}
+.switch input::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--panel);transition:transform .15s}
+.switch input:checked::after{transform:translateX(18px)}
+/* On/off toggle buttons (a visually hidden checkbox inside, so the state is a real input). */
+.toggle{position:relative;display:inline-flex;align-items:center;height:var(--ctl-h);padding:0 12px;box-sizing:border-box;
+  font-size:.875rem;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;cursor:pointer;user-select:none;
+  transition:background-color .12s,border-color .12s,color .12s}
+.toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.toggle:hover{border-color:var(--muted)}
+.toggle:has(input:checked){background:var(--accent);border-color:var(--accent);color:#fff}
+.toggle:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.switch input::after,.toggle{transition:none}}
+
+/* Map box, 2:1. Fully zoomed out, the flat map shows Arctic→Antarctic Circle,
+   which is exactly twice as wide as tall, so it fills the box with no side strips. */
+.mapwrap{position:relative}
+#map{width:100%;aspect-ratio:2/1;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+/* Fullscreen: the whole map area (map, badges, legend) fills the screen */
+.mapwrap:fullscreen{background:var(--panel)}
+.mapwrap:fullscreen #map{aspect-ratio:auto;height:100vh;border:0;border-radius:0;box-shadow:none}
+.mapwrap:fullscreen .badges{border-radius:0}
+
+/* Count badges on grouped markers */
+.badges{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden;border-radius:var(--radius)}
+.badge{position:absolute;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#e5484d;color:#fff;border:1.5px solid #fff;font:700 10px/13px var(--sans);text-align:center;transform:translate(-50%,-50%);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+/* Legend (click a row to hide/show) */
+.legend{position:absolute;left:10px;bottom:10px;z-index:2;display:grid;gap:2px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-size:12px}
+.legend button{all:unset;display:flex;align-items:center;gap:8px;padding:1px 2px;cursor:pointer;color:var(--fg);border-radius:3px}
+.legend button:focus-visible{outline:2px solid var(--accent)}
+.legend button.off{opacity:.4}
+.legend i{width:10px;height:10px;border-radius:50%;flex:none;margin:0 2px}
+.legend img{width:14px;height:auto;flex:none}
+.legend hr{border:0;border-top:1px solid var(--line);margin:3px 0}
+/* Hover box, and its link list after clicking a grouped marker */
+.maplibregl-popup{z-index:2}
+.maplibregl-popup-content{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font:12px/1.45 var(--sans);box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.maplibregl-popup-tip{display:none}
+.tip-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px}
+.tip-close{all:unset;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0 2px}
+.tip-close:hover,.tip-close:focus-visible{color:var(--fg)}
+.tip-list{display:grid;gap:1px;margin:0 -6px}
+.tip-list a,.tip-list .nolink{display:grid;padding:4px 6px;border-radius:4px;color:var(--fg);text-decoration:none}
+.tip-list a:hover,.tip-list a:focus-visible{background:var(--bg);outline:none}
+.tip-list a .nm::after{content:" ↗";color:var(--accent)}
+.tip-list .st{font-size:11px;color:var(--muted)}
+.tip-list .nolink{color:var(--muted)}
+.maplibregl-ctrl-reset{font-size:16px;line-height:1}
+</style>
+</head><body>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="group"><span class="group-title">Projection</span>
+      <label class="switch"><span class="on">Mercator</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label>
+    </div>
+    <div class="group"><span class="group-title">Marker</span>
+      <label class="switch"><span class="on">Simple</span><input type="checkbox" role="switch" id="marker" aria-label="Fancy markers"><span>Fancy</span></label>
+      <label class="toggle" title="Ring diameter for storage rings, length for FELs"><input type="checkbox" id="bysize">Scale by size</label>
+      <label class="toggle"><input type="checkbox" id="bystatus" checked>Color by status</label>
+      <label class="toggle"><input type="checkbox" id="srir">Highlight infrared</label>
+    </div>
+    <div class="group push"><span class="group-title">Download</span><span class="msg" id="msg" aria-live="polite"></span><button id="dldata" class="secondary" title="Facility data (zip of the two GeoJSON files)">Data</button><button id="save" title="Map image (PNG), 2000 px on the shorter side" disabled>Image</button></div>
+  </div>
+  <div class="mapwrap">
+    <div id="map"></div>
+    <div id="badges" class="badges"></div>
+    <div id="legend" class="legend"></div>
+  </div>
+</div>
+
+<script type="module">
+// MapLibre GL JS 6 (ES module from jsDelivr; it loads its own worker from there too).
+import * as maplibregl from "https://cdn.jsdelivr.net/npm/maplibre-gl@6.16.0/dist/maplibre-gl.mjs";
+
+// Facility data lives in two files (one facility per line), edit those to add or
+// change facilities:
+//   data/facilities.geojson            storage rings
+//   data/free-electron-lasers.geojson  free-electron lasers
+// Each feature has name, city, country, status, energy_GeV, url, and "srir": true
+// when it offers infrared (an IR beamline, or an IR/THz FEL). Rings also have
+// circumference_m; FELs have band (photon range).
+// (Needs a web server: browsers block fetch() from pages opened as local files.)
+let DATA;
+try{
+  const get=u=>fetch(u).then(r=>{if(!r.ok) throw new Error(u+": HTTP "+r.status);return r.json()});
+  const [rings,fels]=await Promise.all([get("data/facilities.geojson"),get("data/free-electron-lasers.geojson")]);
+  DATA={type:"FeatureCollection",features:[
+    ...rings.features.map(f=>({...f,properties:{...f.properties,kind:"ring"}})),
+    ...fels.features.map(f=>({...f,properties:{...f.properties,kind:"fel"}}))]};
+}catch(e){
+  document.getElementById("map").innerHTML='<p style="padding:24px;color:var(--muted)">Couldn\'t load the facility data (data/*.geojson). '+
+    'If you opened this file directly from disk, serve the folder instead, e.g. <code>python3 -m http.server</code>.</p>';
+  throw e;
+}
+const URLS=Object.fromEntries(DATA.features.filter(f=>f.properties.url).map(f=>[f.properties.name,f.properties.url]));
+const SRIR=new Set(DATA.features.filter(f=>f.properties.srir).map(f=>f.properties.name));   // offers infrared
+const STATUSES=[["operating","Operating","--op"],["planned","Planned","--plan"],["decommissioned","Decommissioned","--dec"]];
+
+const $=id=>document.getElementById(id);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const feats=DATA.features.map(f=>{const p=f.properties;return{lon:f.geometry.coordinates[0],lat:f.geometry.coordinates[1],...p,diam:p.circumference_m?p.circumference_m/Math.PI:0}});
+const dmax=Math.max(...feats.filter(f=>f.kind==="ring").map(f=>f.diam));
+const STATUS_LABEL=Object.fromEntries(STATUSES.map(([k,l])=>[k,l]));
+const RANK={operating:0,planned:1,decommissioned:2};
+const hidden=new Set();                              // statuses and kinds ("ring"/"fel") switched off in the legend
+const KINDS=[["ring","Storage ring"],["fel","Free-electron laser"]];
+
+// Relative physical size, 0..1: ring diameter for storage rings, overall length
+// for FELs, each type relative to its own largest member (FELs reach ~3.4 km,
+// ~5× the largest ring diameter; a shared scale would shrink every ring to the
+// minimum). With "Scale by size" on, markers scale linearly with it (see pinScale).
+const lmax=Math.max(...feats.filter(f=>f.kind==="fel").map(f=>f.length_m||0));
+const sizeT=f=>f.kind==="fel"?(f.length_m||0)/lmax:f.diam/dmax;
+
+// ---- Map style ---------------------------------------------------------------
+// World overview: MapLibre's default demo style. From STREET_Z (past country
+// level) on: OpenFreeMap "Liberty" street map (OpenStreetMap data, free, no key).
+// Both are merged into ONE style, each layer limited to its zoom range, so the
+// hand-over is seamless (no style reload). The demo font server also has the
+// Noto fonts OpenFreeMap uses, so it serves the labels of both.
+const DEMO_STYLE="https://demotiles.maplibre.org/style.json";
+const STREET_STYLE="https://tiles.openfreemap.org/styles/liberty";
+const STREET_Z=5;
+async function buildStyle(){
+  const get=u=>fetch(u).then(r=>{if(!r.ok) throw new Error(u+" "+r.status);return r.json()});
+  const [demo,street]=await Promise.all([get(DEMO_STYLE),get(STREET_STYLE)]);
+  const s={version:8,name:"Overview + streets",glyphs:demo.glyphs,sprite:street.sprite,sources:{},layers:[]};
+  const add=(st,pre,zoom)=>{
+    for(const [k,v] of Object.entries(st.sources)) s.sources[pre+k]=v;
+    for(const l of st.layers){
+      const r=zoom(l);
+      if(r.minzoom>=r.maxzoom) continue;                // layer only exists outside this range
+      s.layers.push({...l,id:pre+l.id,...(l.source?{source:pre+l.source}:{}),...r});
+    }
+  };
+  add(demo,"overview-",l=>({minzoom:l.minzoom??0,maxzoom:Math.min(l.maxzoom??24,STREET_Z)}));
+  add(street,"street-",l=>({minzoom:Math.max(l.minzoom??0,STREET_Z),maxzoom:l.maxzoom??24}));
+  return s;
+}
+let STYLE;
+try{STYLE=await buildStyle()}
+catch(e){console.warn("Street map unavailable, using the overview style only:",e);STYLE=DEMO_STYLE}
+const globe=()=>$("proj").checked;
+
+// ---- Map ----------------------------------------------------------------------
+// Default zoom: flat map ≈ full width; globe ≈ 90% of the box height
+// (a globe at zoom z is 512·2^z/π px across).
+const homeZoom=()=>{
+  const el=$("map");
+  return globe()?Math.log2(.9*Math.min(el.clientWidth,el.clientHeight)*Math.PI/512)
+               :Math.max(0,Math.log2(el.clientWidth/512)-.15);
+};
+const HOME={center:[10,25]};
+// Flat map limits (replaces MapLibre's default). Vertically the view never goes
+// past the Arctic / Antarctic Circles (±66.56°): zooming out stops when the box
+// spans exactly circle to circle, and panning stops at the circles, so the polar
+// regions are never shown. Horizontally panning stops at the date line; on a box
+// wider than the world at that zoom, the world stays centered. No world copies
+// are drawn (renderWorldCopies:false). The globe is not limited.
+const MAX_LAT=85.051129, POLAR_CIRCLE=66.5634;
+const mercY=lat=>{const s=Math.sin(Math.max(-MAX_LAT,Math.min(MAX_LAT,lat))*Math.PI/180);return .5-Math.log((1+s)/(1-s))/(4*Math.PI)};
+const latFromY=y=>Math.atan(Math.sinh(Math.PI*(1-2*y)))*180/Math.PI;
+function constrainFlat(lngLat,zoom){
+  if(globe()) return{center:lngLat,zoom};
+  const el=$("map"), W=el.clientWidth, H=el.clientHeight;
+  const yN=mercY(POLAR_CIRCLE), yS=mercY(-POLAR_CIRCLE);           // 0..1 world square
+  zoom=Math.max(zoom,Math.log2(H/((yS-yN)*512)));                  // box ≤ circle-to-circle tall
+  const ws=512*2**zoom;                                             // world size in px at this zoom
+  const x=ws<=W?.5:Math.min(Math.max((lngLat.lng+180)/360,W/2/ws),1-W/2/ws);
+  const y=Math.min(Math.max(mercY(lngLat.lat),yN+H/2/ws),yS-H/2/ws);
+  return{center:new maplibregl.LngLat(x*360-180,latFromY(y)),zoom};
+}
+const map=new maplibregl.Map({
+  container:"map", style:STYLE, center:HOME.center, zoom:homeZoom(),
+  attributionControl:{compact:true}, canvasContextAttributes:{preserveDrawingBuffer:true},   // needed for Save PNG
+  renderWorldCopies:false,         // draw the world once, even fully zoomed out (no repeated continents)
+  transformConstrain:constrainFlat,   // …and still allow zooming out to the whole world (see above)
+  dragRotate:false, pitchWithRotate:false, touchPitch:false, maxPitch:0   // north always up, no tilt
+});
+map.touchZoomRotate.disableRotation();               // pinch zooms but doesn't twist
+map.keyboard.disableRotation();
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-right");
+map.addControl(new maplibregl.FullscreenControl({container:document.querySelector(".mapwrap")}),"top-right");
+// Reset view (⌂): world view, north up.
+map.addControl({
+  onAdd(){const d=document.createElement("div");d.className="maplibregl-ctrl maplibregl-ctrl-group";
+    d.innerHTML='<button type="button" class="maplibregl-ctrl-reset" title="Reset view" aria-label="Reset view">⌂</button>';
+    d.firstChild.onclick=()=>map.easeTo({center:HOME.center,zoom:homeZoom(),bearing:0,pitch:0});return d},
+  onRemove(){}
+},"top-right");
+
+// ---- Overlapping markers -------------------------------------------------------
+// Markers whose centers are closer than ~half a marker size merge into one group,
+// led by the highest-priority facility (operating > planned > decommissioned,
+// then larger ring). Hover lists all, click opens a link menu, a badge shows the count.
+let groups=[];
+function visible(f,margin=.02){                      // globe: is the point on the near side?
+  if(!globe()) return true;
+  const c=map.getCenter(), r=Math.PI/180, lo=f.lon*r, la=f.lat*r, clo=c.lng*r, cla=c.lat*r;
+  return Math.sin(la)*Math.sin(cla)+Math.cos(la)*Math.cos(cla)*Math.cos(lo-clo)>margin;
+}
+function computeGroups(){
+  const list=feats.filter(f=>!hidden.has(f.status)&&!hidden.has(f.kind)).sort((a,b)=>RANK[a.status]-RANK[b.status]||b.diam-a.diam);
+  const xy=new Map(list.map(f=>{const q=visible(f)?map.project([f.lon,f.lat]):null;return[f,q&&[q.x,q.y]]}));
+  const thr=(a,b)=>Math.max(6,(pinScale(a)+pinScale(b))/2*PIN_W*.5);   // half a pin head
+  const out=[], used=new Set();
+  for(const f of list){
+    if(used.has(f)) continue;
+    used.add(f);
+    const g=[f], a=xy.get(f);
+    if(a) for(const o of list){
+      const b=xy.get(o);
+      if(used.has(o)||!b) continue;
+      if(Math.hypot(a[0]-b[0],a[1]-b[1])<thr(f,o)){g.push(o);used.add(o)}
+    }
+    out.push(g);
+  }
+  return out;
+}
+function hoverHtml(g){
+  const ir=f=>$("srir").checked&&SRIR.has(f.name)?" · IR":"";
+  if(g.length===1){
+    const f=g[0];
+    const what=f.kind==="fel"?`Free-electron laser (${f.band}) · ${STATUS_LABEL[f.status]}${ir(f)}<br>${f.energy_GeV} GeV electron beam${f.length_m?` · length ≈ ${f.length_m} m`:""}`
+      :`${STATUS_LABEL[f.status]}${ir(f)}<br>${f.energy_GeV} GeV · C = ${f.circumference_m} m · Ø ≈ ${f.diam.toFixed(0)} m`;
+    return `<b>${f.name}</b><br>${f.city}, ${f.country}<br>${what}`+(URLS[f.name]?"<br><i>Click to open website ↗</i>":"");
+  }
+  return `<b>${g.length} facilities</b><br>`+
+    g.map(f=>`${f.name}${f.kind==="fel"?" (FEL)":""} — ${STATUS_LABEL[f.status]}, ${f.energy_GeV} GeV${ir(f)}`).join("<br>")+
+    "<br><i>Click to choose a facility</i>";
+}
+
+// Marker layer: one circle per group leader, drawn operating-on-top.
+// ---- Pins (Google-Maps style): teardrop, darker outline, dark center dot ------
+// One icon per color, drawn on a canvas at 2× and tinted from the page's status
+// colors; icon-size scales it per marker. The image is 14.5 × 19 px; pins are
+// drawn at 0.8× that (≈ 11.6 × 15 px) at default size.
+const IMG_K=4;                                         // marker images drawn at 4× (sharp in 2000 px exports)
+const PIN=new Path2D("M13.5 0C6.04 0 0 6.04 0 13.5C0 21 13.5 36 13.5 36S27 21 27 13.5C27 6.04 20.96 0 13.5 0Z");   // 27 × 36, shorter point
+const PIN_W=14.5, PIN_H=19;
+const pinScale=f=>$("bysize").checked?.45+1.35*sizeT(f):.8;   // linear in diameter/length: 0.45×–1.8× (default 0.8×)
+function shade(hex,k){                               // darken a #rrggbb color by k (0..1)
+  const n=parseInt(hex.replace("#","").slice(0,6),16);
+  const c=[n>>16,n>>8&255,n&255].map(v=>Math.round(v*(1-k)));
+  return`rgb(${c.join(",")})`;
+}
+function pinImage(color,whiteDot=false){            // whiteDot: FEL in "Simple" mode
+  const k=IMG_K, c=document.createElement("canvas"); c.width=29*k; c.height=38*k;
+  const x=c.getContext("2d"); x.scale(k,k); x.translate(1,1);
+  x.fillStyle=color; x.fill(PIN);
+  x.lineWidth=1.2; x.strokeStyle=shade(color,.35); x.stroke(PIN);
+  x.beginPath(); x.arc(13.5,13.5,4.8,0,2*Math.PI); x.fillStyle=whiteDot?"#fff":shade(color,.5); x.fill();
+  if(whiteDot){x.lineWidth=1;x.strokeStyle=shade(color,.5);x.stroke()}
+  return x.getImageData(0,0,c.width,c.height);
+}
+// "Fancy" storage ring: a round marker with a white ring inside, centered on the location.
+const RING_S=18;                                       // css px at icon-size 1
+function ringImage(color){
+  const k=IMG_K, c=document.createElement("canvas"); c.width=c.height=RING_S*k;
+  const x=c.getContext("2d"); x.scale(k,k); const m=RING_S/2;
+  x.beginPath(); x.arc(m,m,m-1,0,2*Math.PI); x.fillStyle=color; x.fill();
+  x.lineWidth=1.2; x.strokeStyle=shade(color,.35); x.stroke();
+  x.beginPath(); x.arc(m,m,m*.48,0,2*Math.PI); x.lineWidth=1.8; x.strokeStyle="rgba(255,255,255,.95)"; x.stroke();
+  return x.getImageData(0,0,c.width,c.height);
+}
+// Marker style: "Simple" = map pins for everything (FELs with a white center dot);
+// "Fancy" = round ring markers for storage rings, laser pointers for FELs.
+const fancy=()=>$("marker").checked;
+const shapeOf=f=>fancy()?(f.kind==="fel"?"fel":"ring"):(f.kind==="fel"?"pinw":"pin");
+const IMAGE={pin:c=>pinImage(c),pinw:c=>pinImage(c,true),ring:ringImage,fel:felImage};
+// ---- FEL marker: a laser pointer whose red beam ends on the coordinate -------
+// Drawn on a 24 × 24 grid (css px at icon-size 1), body in the status color.
+const FEL_S=24, FEL_SPOT=[2.5,21.5];                  // beam spot = the facility position
+function felImage(color){
+  const k=IMG_K, c=document.createElement("canvas"); c.width=c.height=FEL_S*k;
+  const x=c.getContext("2d"); x.scale(k,k); x.lineCap="round";
+  const [sx,sy]=FEL_SPOT;
+  x.strokeStyle="rgba(255,255,255,.95)"; x.lineWidth=3.4; x.beginPath(); x.moveTo(sx,sy); x.lineTo(10.5,13.5); x.stroke();
+  x.strokeStyle="#ff2d2d"; x.lineWidth=1.7; x.beginPath(); x.moveTo(sx,sy); x.lineTo(10.5,13.5); x.stroke();
+  x.fillStyle="#fff"; x.beginPath(); x.arc(sx,sy,2.7,0,2*Math.PI); x.fill();
+  x.fillStyle="#ff2d2d"; x.beginPath(); x.arc(sx,sy,1.9,0,2*Math.PI); x.fill();
+  x.save(); x.translate(16.2,7.8); x.rotate(-Math.PI/4);         // body along the diagonal
+  const L=17, T=6.6;
+  x.beginPath(); x.roundRect(-L/2,-T/2,L,T,T/2); x.fillStyle=color; x.fill();
+  x.lineWidth=1.1; x.strokeStyle=shade(color,.35); x.stroke();
+  x.beginPath(); x.roundRect(-L/2,-T/2,3.4,T,[T/2,0,0,T/2]); x.fillStyle=shade(color,.5); x.fill();   // aperture end
+  x.beginPath(); x.arc(1.5,0,1.3,0,2*Math.PI); x.fillStyle="rgba(255,255,255,.85)"; x.fill();       // button
+  x.restore();
+  return x.getImageData(0,0,c.width,c.height);
+}
+// Screen box of a marker relative to its coordinate (css px), and where its count badge goes.
+const iconScale=f=>pinScale(f)*(shapeOf(f)==="fel"?1.25:1);   // laser pointers a bit larger than pins
+function markerBox(f){
+  const s=iconScale(f), shape=shapeOf(f);
+  if(shape==="fel"){const [sx,sy]=FEL_SPOT;return{left:-sx*s,right:(FEL_S-sx)*s,top:-sy*s,bottom:(FEL_S-sy)*s,badge:[(21-sx)*s,(3-sy)*s]}}
+  if(shape==="ring"){const r=RING_S/2*s;return{left:-r,right:r,top:-r,bottom:r,badge:[r*.72,-r*.72]}}
+  const w=PIN_W*s, h=PIN_H*s;
+  return{left:-w/2,right:w/2,top:-h,bottom:0,badge:[w*.42,-h+w*.12]};
+}
+const pinColors={};                                  // icon name -> color it was drawn with
+function ensurePins(){
+  const cols=[...STATUSES.map(([k,,t])=>[k,css(t)]),["accent",css("--accent")]];
+  const want=Object.fromEntries(cols.flatMap(([k,c])=>Object.keys(IMAGE).map(sh=>[sh+"-"+k,c])));
+  for(const [name,color] of Object.entries(want)){
+    if(map.hasImage(name)&&pinColors[name]===color) continue;
+    const img=IMAGE[name.split("-")[0]](color);
+    map.hasImage(name)?map.updateImage(name,img):map.addImage(name,img,{pixelRatio:IMG_K});
+    pinColors[name]=color;
+  }
+}
+
+function featureCollection(){
+  const byStatus=$("bystatus").checked, hl=$("srir").checked;
+  return{type:"FeatureCollection",features:groups.map((g,i)=>{const f=g[0];return{type:"Feature",
+    geometry:{type:"Point",coordinates:[f.lon,f.lat]},
+    properties:{gi:i,s:iconScale(f),icon:shapeOf(f)+"-"+(byStatus?f.status:"accent"),
+      anchor:{fel:"top-left",ring:"center"}[shapeOf(f)]||"bottom",off:shapeOf(f)==="fel"?FEL_SPOT.map(v=>-v):[0,0],
+      op:hl&&!g.some(x=>SRIR.has(x.name))?.25:1,z:3-RANK[f.status]}}})};
+}
+function addLayers(){
+  ensurePins();
+  if(map.getSource("fac")) return;
+  map.addSource("fac",{type:"geojson",data:featureCollection()});
+  map.addLayer({id:"fac",type:"symbol",source:"fac",
+    layout:{"icon-image":["get","icon"],"icon-size":["get","s"],"icon-anchor":["get","anchor"],"icon-offset":["get","off"],
+      "icon-allow-overlap":true,"icon-ignore-placement":true,"symbol-sort-key":["get","z"]},
+    paint:{"icon-opacity":["get","op"]}});
+}
+function update(){                                   // regroup + redraw markers, badges, legend
+  if(!map.isStyleLoaded()&&!map.getSource("fac")) return;
+  groups=computeGroups();
+  if(map.isStyleLoaded()) ensurePins();               // colors may have changed (dark mode)
+  const src=map.getSource("fac");
+  if(src) src.setData(featureCollection());
+  positionBadges(); drawLegend(); placeLegend();
+}
+
+// The part of the map box that shows map (css px). On the flat map, when the
+// world is narrower than the box (fully zoomed out on a wide screen), the
+// strips beside it are empty; the legend and the PNG export stay inside.
+function contentRect(){
+  const el=map.getCanvas(), W=el.clientWidth, H=el.clientHeight;
+  if(globe()) return{x0:0,y0:0,x1:W,y1:H};
+  const a=map.project([-179.9999,POLAR_CIRCLE]), b=map.project([179.9999,-POLAR_CIRCLE]);
+  return{x0:Math.max(0,a.x),y0:Math.max(0,a.y),x1:Math.min(W,b.x),y1:Math.min(H,b.y)};
+}
+function placeLegend(){
+  const r=contentRect(), H=map.getCanvas().clientHeight, lg=$("legend");
+  lg.style.left=(r.x0+10)+"px"; lg.style.bottom=(H-r.y1+10)+"px";
+}
+
+// Count badges: HTML dots that follow the map every frame.
+const badgeLayer=$("badges");
+function positionBadges(){
+  const multi=groups.filter(g=>g.length>1);
+  while(badgeLayer.children.length<multi.length) badgeLayer.appendChild(document.createElement("span")).className="badge";
+  while(badgeLayer.children.length>multi.length) badgeLayer.lastChild.remove();
+  multi.forEach((g,i)=>{
+    const f=g[0], el=badgeLayer.children[i], vis=visible(f,.12);   // MapLibre hides pins a bit before the rim
+    el.hidden=!vis;
+    if(!vis) return;
+    const q=map.project([f.lon,f.lat]), b=markerBox(f).badge;
+    el.textContent=g.length; el.style.left=(q.x+b[0])+"px"; el.style.top=(q.y+b[1])+"px";
+    // Highlight infrared: the badge stays solid only if every facility in the group offers IR.
+    el.style.opacity=$("srir").checked&&!g.every(x=>SRIR.has(x.name))?.25:1;
+  });
+}
+
+// Legend: click a status or a facility type to hide/show it.
+const legendIcons={};
+function legendIcon(kind,color){                      // small marker image for the legend (data URL)
+  const key=kind+color;
+  if(!legendIcons[key]){
+    const img=IMAGE[kind](color), c=document.createElement("canvas");
+    c.width=img.width; c.height=img.height; c.getContext("2d").putImageData(img,0,0);
+    legendIcons[key]=c.toDataURL();
+  }
+  return legendIcons[key];
+}
+function drawLegend(){
+  const lg=$("legend");
+  const btn=(k,icon,l)=>`<button type="button" data-k="${k}" class="${hidden.has(k)?"off":""}" aria-pressed="${!hidden.has(k)}">${icon}${l}</button>`;
+  const grey=css("--muted"), icon=k=>legendIcon(shapeOf({kind:k}),grey);
+  lg.innerHTML=($("bystatus").checked?STATUSES.map(([k,l,t])=>btn(k,`<i style="background:${css(t)}"></i>`,l)).join("")+'<hr>':"")+
+    KINDS.map(([k,l])=>btn(k,`<img src="${icon(k)}" alt="">`,l)).join("");
+}
+$("legend").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-k]");
+  if(!b) return;
+  const k=b.dataset.k; hidden.has(k)?hidden.delete(k):hidden.add(k); update();
+});
+
+// ---- Interaction ----------------------------------------------------------------
+const tip=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:10,maxWidth:"340px"});
+const groupAt=e=>groups[e.features[0].properties.gi];
+// The hover box follows the pointer over pins. Clicking a single facility opens
+// its website; clicking a grouped pin "pins" the hover box in place and expands
+// it into a list of links, one per facility. It closes with ×, Esc, a click on
+// the map, or after choosing a link.
+let pinned=null;                                     // the group whose list is open
+function showTip(g,lngLat,html){
+  const b=markerBox(g[0]), cx=(b.left+b.right)/2, cy=(b.top+b.bottom)/2;   // keep the box clear of the marker
+  tip.setOffset({"bottom":[cx,b.top-4],"top":[cx,b.bottom+4],"left":[b.right+4,cy],"right":[b.left-4,cy],
+    "bottom-left":[b.right,b.top],"bottom-right":[b.left,b.top],"top-left":[b.right,b.bottom],"top-right":[b.left,b.bottom],"center":[cx,cy]});
+  tip.setLngLat(lngLat).setHTML(html).addTo(map);
+}
+function listHtml(g){
+  return `<div class="tip-head"><b>${g.length} facilities</b><button type="button" class="tip-close" aria-label="Close">×</button></div>`+
+    '<div class="tip-list">'+g.map(f=>{
+      const u=URLS[f.name], body=`<span class="nm">${f.name}</span><span class="st">${f.kind==="fel"?"FEL · ":""}${STATUS_LABEL[f.status]} · ${f.city} · ${f.energy_GeV} GeV</span>`;
+      return u?`<a href="${u}" target="_blank" rel="noopener">${body}</a>`:`<div class="nolink">${body}</div>`;
+    }).join("")+"</div>";
+}
+function unpin(){if(pinned){pinned=null;tip.remove()}}
+map.on("mousemove","fac",e=>{
+  if(pinned) return;                                  // keep the open list where it is
+  const g=groupAt(e);
+  if(!g) return;
+  showTip(g,[g[0].lon,g[0].lat],hoverHtml(g));
+  map.getCanvas().style.cursor=g.length>1||URLS[g[0].name]?"pointer":"";
+});
+map.on("mouseleave","fac",()=>{map.getCanvas().style.cursor="";if(!pinned) tip.remove()});
+map.on("click",e=>{
+  const hit=map.queryRenderedFeatures(e.point,{layers:["fac"]})[0], g=hit&&groups[hit.properties.gi];
+  if(!g){unpin();return}                               // click on the map: close the list
+  if(g.length===1){unpin();const u=URLS[g[0].name];if(u) window.open(u,"_blank","noopener");return}
+  openList(g);
+  map.getCanvas().style.cursor="";
+});
+function openList(g){
+  pinned=g;
+  showTip(g,[g[0].lon,g[0].lat],listHtml(g));
+  tip.getElement().querySelector(".tip-close").onclick=unpin;
+  tip.getElement().querySelector(".tip-list").onclick=ev=>{if(ev.target.closest("a")) setTimeout(unpin)};
+}
+// After a zoom/pan the groups are rebuilt: keep the list open while its pin
+// still leads a group, updating it if members changed; close it otherwise.
+function refreshPinned(){
+  if(!pinned) return;
+  const g=groups.find(x=>x[0]===pinned[0]);
+  if(!g||g.length<2){unpin();return}
+  if(g.length!==pinned.length||g.some((f,i)=>f!==pinned[i])) openList(g); else pinned=g;
+}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")unpin()});
+
+// Once the style is loaded: apply the projection,
+// then add the facility layer on top.
+map.on("style.load",()=>{map.setProjection({type:globe()?"globe":"mercator"});addLayers();update()});
+map.on("move",()=>{positionBadges();placeLegend()});
+map.on("resize",placeLegend);
+map.on("moveend",()=>{update();refreshPinned()});
+map.on("load",()=>{$("save").disabled=false});
+
+// ---- Controls ---------------------------------------------------------------------
+document.querySelectorAll(".switch input").forEach(inp=>inp.addEventListener("change",()=>{
+  const [off,on]=inp.parentElement.querySelectorAll("span");
+  off.classList.toggle("on",!inp.checked);on.classList.toggle("on",inp.checked);
+}));
+// Switching projection starts from that projection's default view.
+$("proj").addEventListener("change",()=>{
+  map.setProjection({type:globe()?"globe":"mercator"});
+  map.jumpTo({center:HOME.center,zoom:homeZoom(),bearing:0,pitch:0});
+  update();
+});
+["bysize","bystatus","srir","marker"].forEach(id=>$(id).addEventListener("change",update));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",update);
+
+// ---- Save PNG: map canvas + badges + attribution ------------------------------------
+// Export at 2000 px on the shorter side of the map area (flat map: cropped to the
+// world when it is narrower than the box; globe: the whole box):
+// re-render the map at that pixel ratio, wait until all tiles are drawn, copy
+// the canvas, then restore the screen pixel ratio. Badges and credits are
+// painted on top in CSS px, scaled by the same factor.
+const EXPORT_SHORT_SIDE=2000;
+async function savePNG(){
+  const src=map.getCanvas(), W=src.clientWidth, H=src.clientHeight;
+  const r=contentRect(), cw=r.x1-r.x0, ch=r.y1-r.y0;     // flat map: crop away empty side strips
+  const k=EXPORT_SHORT_SIDE/Math.min(cw,ch);
+  const prev=map.getPixelRatio();
+  map.setPixelRatio(k);
+  // Wait for frames drawn at the new size until every tile is in (max ~8 s).
+  // (A plain "idle" wait can fire before the resized canvas is redrawn.)
+  const frame=()=>new Promise(ok=>{map.once("render",ok);map.triggerRepaint()});
+  const t0=performance.now();
+  await frame();
+  while(!(map.loaded()&&map.areTilesLoaded())&&performance.now()-t0<8000) await frame();
+  await frame();
+  const c=document.createElement("canvas"); c.width=Math.round(cw*k); c.height=Math.round(ch*k);
+  const ctx=c.getContext("2d"); ctx.fillStyle=css("--panel"); ctx.fillRect(0,0,c.width,c.height);
+  const sx=src.width/W, sy=src.height/H;                 // canvas px per css px
+  ctx.drawImage(src,r.x0*sx,r.y0*sy,cw*sx,ch*sy,0,0,c.width,c.height);
+  map.setPixelRatio(prev);
+  ctx.scale(c.width/cw,c.height/ch); ctx.translate(-r.x0,-r.y0);   // draw overlays in screen css px
+  for(const el of badgeLayer.children){
+    if(el.hidden) continue;
+    const x=parseFloat(el.style.left), y=parseFloat(el.style.top);
+    ctx.globalAlpha=parseFloat(el.style.opacity||1);
+    ctx.beginPath(); ctx.arc(x,y,8,0,2*Math.PI); ctx.fillStyle="#e5484d"; ctx.fill();
+    ctx.lineWidth=1.5; ctx.strokeStyle="#fff"; ctx.stroke();
+    ctx.fillStyle="#fff"; ctx.font=`700 10px ${css("--sans")}`; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(el.textContent,x,y+.5);
+  }
+  ctx.globalAlpha=1;
+  // Legend: drawn where it sits on screen (over the map's bottom-left corner),
+  // so the image keeps exactly the map's size, with no extra margin.
+  const lg=$("legend"), mr=src.getBoundingClientRect();
+  if(!lg.hidden&&lg.children.length){
+    const R=e=>{const r=e.getBoundingClientRect();return{x:r.left-mr.left,y:r.top-mr.top,w:r.width,h:r.height}};
+    const b=R(lg);
+    ctx.fillStyle=css("--panel"); ctx.strokeStyle=css("--line"); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(b.x+.5,b.y+.5,b.w-1,b.h-1,6); ctx.fill(); ctx.stroke();
+    ctx.font=`12px ${css("--sans")}`; ctx.textBaseline="middle"; ctx.textAlign="left";
+    for(const el of lg.children){
+      const r=R(el);
+      if(el.tagName==="HR"){ctx.fillStyle=css("--line");ctx.fillRect(r.x,r.y,r.w,1);continue}
+      ctx.globalAlpha=el.classList.contains("off")?.4:1;
+      const ic=el.querySelector("i,img"), ir=R(ic);
+      if(ic.tagName==="I"){ctx.fillStyle=ic.style.background;ctx.beginPath();ctx.arc(ir.x+ir.w/2,ir.y+ir.h/2,ir.w/2,0,2*Math.PI);ctx.fill()}
+      else ctx.drawImage(ic,ir.x,ir.y,ir.w,ir.h);
+      ctx.fillStyle=css("--fg"); ctx.fillText(el.textContent,ir.x+ir.w+8,r.y+r.h/2);
+      ctx.globalAlpha=1;
+    }
+  }
+  const attr=(document.querySelector(".maplibregl-ctrl-attrib-inner")||{}).textContent||"";   // the style's own credits
+  if(attr){
+    ctx.font=`10px ${css("--sans")}`; ctx.textAlign="right"; ctx.textBaseline="bottom";
+    const w=ctx.measureText(attr).width+10;
+    ctx.fillStyle="rgba(255,255,255,.8)"; ctx.fillRect(r.x1-w,r.y1-16,w,16); ctx.fillStyle="#333"; ctx.fillText(attr,r.x1-5,r.y1-3);
+  }
+  return new Promise(ok=>c.toBlob(ok,"image/png"));
+}
+function download(blob,name){
+  const u=URL.createObjectURL(blob), a=document.createElement("a"); a.href=u; a.download=name;
+  document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
+$("save").addEventListener("click",async()=>{
+  $("save").disabled=true;
+  try{
+    const blob=await savePNG(), name="accelerators-"+(globe()?"globe":"mercator")+".png";
+    download(blob,name); $("msg").textContent="";
+  }catch(e){$("msg").textContent="Couldn't save the PNG"+(e&&e.message?": "+e.message:".")}
+  finally{$("save").disabled=false}
+});
+
+// ---- Download data: the two facility files, unchanged, in one zip ---------------
+const DATA_FILES=["data/facilities.geojson","data/free-electron-lasers.geojson"];
+const CRC_TABLE=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+function crc32(b){let c=~0;for(let i=0;i<b.length;i++)c=CRC_TABLE[(c^b[i])&255]^(c>>>8);return(~c)>>>0}
+// Minimal ZIP writer (files stored uncompressed; small text files, so no library needed).
+function zipFiles(files){                            // files: [{name, data: Uint8Array}]
+  const enc=new TextEncoder(), local=[], central=[], d=new Date();
+  const time=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+  const date=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
+  let offset=0;
+  for(const f of files){
+    const name=enc.encode(f.name), crc=crc32(f.data), n=f.data.length;
+    const h=new DataView(new ArrayBuffer(30));                       // local file header
+    [[0,0x04034b50,4],[4,20,2],[6,0x0800,2],[8,0,2],[10,time,2],[12,date,2],[14,crc,4],[18,n,4],[22,n,4],[26,name.length,2],[28,0,2]]
+      .forEach(([o,v,w])=>w===4?h.setUint32(o,v,true):h.setUint16(o,v,true));
+    local.push(h,name,f.data);
+    const c=new DataView(new ArrayBuffer(46));                       // central directory entry
+    [[0,0x02014b50,4],[4,20,2],[6,20,2],[8,0x0800,2],[10,0,2],[12,time,2],[14,date,2],[16,crc,4],[20,n,4],[24,n,4],[28,name.length,2],[42,offset,4]]
+      .forEach(([o,v,w])=>w===4?c.setUint32(o,v,true):c.setUint16(o,v,true));
+    central.push(c,name);
+    offset+=30+name.length+n;
+  }
+  const size=central.reduce((t,p)=>t+p.byteLength,0), e=new DataView(new ArrayBuffer(22));   // end of central directory
+  [[0,0x06054b50,4],[8,files.length,2],[10,files.length,2],[12,size,4],[16,offset,4]].forEach(([o,v,w])=>w===4?e.setUint32(o,v,true):e.setUint16(o,v,true));
+  return new Blob([...local,...central,e],{type:"application/zip"});
+}
+async function dataZip(){
+  const files=await Promise.all(DATA_FILES.map(async u=>{
+    const r=await fetch(u); if(!r.ok) throw new Error(u+": HTTP "+r.status);
+    return{name:u.split("/").pop(),data:new Uint8Array(await r.arrayBuffer())};
+  }));
+  return zipFiles(files);
+}
+$("dldata").addEventListener("click",async()=>{
+  $("dldata").disabled=true;
+  try{download(await dataZip(),"accelerator-atlas-data.zip"); $("msg").textContent=""}
+  catch(e){$("msg").textContent="Couldn't build the data zip"+(e&&e.message?": "+e.message:".")}
+  finally{$("dldata").disabled=false}
+});
+
+window.__atlas={map,get groups(){return groups},update,savePNG,dataZip};   // handy for debugging in the console
+</script>
+</body></html>
