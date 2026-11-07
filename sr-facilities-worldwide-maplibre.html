@@ -197,8 +197,34 @@ function sizeOf(f){                                  // marker diameter in px (s
   return 5+33*t;
 }
 
-// ---- Map style: MapLibre's default demo style (vector, no API key) -----------
-const STYLE="https://demotiles.maplibre.org/style.json";
+// ---- Map style ---------------------------------------------------------------
+// World overview: MapLibre's default demo style. From STREET_Z (past country
+// level) on: OpenFreeMap "Liberty" street map (OpenStreetMap data, free, no key).
+// Both are merged into ONE style, each layer limited to its zoom range, so the
+// hand-over is seamless (no style reload). The demo font server also has the
+// Noto fonts OpenFreeMap uses, so it serves the labels of both.
+const DEMO_STYLE="https://demotiles.maplibre.org/style.json";
+const STREET_STYLE="https://tiles.openfreemap.org/styles/liberty";
+const STREET_Z=5;
+async function buildStyle(){
+  const get=u=>fetch(u).then(r=>{if(!r.ok) throw new Error(u+" "+r.status);return r.json()});
+  const [demo,street]=await Promise.all([get(DEMO_STYLE),get(STREET_STYLE)]);
+  const s={version:8,name:"Overview + streets",glyphs:demo.glyphs,sprite:street.sprite,sources:{},layers:[]};
+  const add=(st,pre,zoom)=>{
+    for(const [k,v] of Object.entries(st.sources)) s.sources[pre+k]=v;
+    for(const l of st.layers){
+      const r=zoom(l);
+      if(r.minzoom>=r.maxzoom) continue;                // layer only exists outside this range
+      s.layers.push({...l,id:pre+l.id,...(l.source?{source:pre+l.source}:{}),...r});
+    }
+  };
+  add(demo,"overview-",l=>({minzoom:l.minzoom??0,maxzoom:Math.min(l.maxzoom??24,STREET_Z)}));
+  add(street,"street-",l=>({minzoom:Math.max(l.minzoom??0,STREET_Z),maxzoom:l.maxzoom??24}));
+  return s;
+}
+let STYLE;
+try{STYLE=await buildStyle()}
+catch(e){console.warn("Street map unavailable, using the overview style only:",e);STYLE=DEMO_STYLE}
 const globe=()=>$("proj").checked;
 
 // ---- Map ----------------------------------------------------------------------
