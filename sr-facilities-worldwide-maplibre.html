@@ -345,7 +345,7 @@ function drawLegend(){
   const lg=$("legend");
   lg.hidden=!$("bystatus").checked;
   lg.innerHTML=STATUSES.map(([k,l,t])=>`<button type="button" data-k="${k}" class="${hidden.has(k)?"off":""}" aria-pressed="${!hidden.has(k)}">`+
-    `<i style="background:${css(t)}"></i>${l} (${feats.filter(f=>f.status===k).length})</button>`).join("");
+    `<i style="background:${css(t)}"></i>${l}</button>`).join("");
 }
 $("legend").addEventListener("click",e=>{
   const b=e.target.closest("button[data-k]");
@@ -429,12 +429,21 @@ $("bysize").addEventListener("change",()=>{$("scale").disabled=!$("bysize").chec
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",update);
 
 // ---- Save PNG: map canvas + badges + attribution ------------------------------------
+// Export at 1000 px on the shorter side (e.g. 1865 × 1000 for a wide map box):
+// re-render the map at that pixel ratio, wait until all tiles are drawn, copy
+// the canvas, then restore the screen pixel ratio. Badges and credits are
+// painted on top in CSS px, scaled by the same factor.
+const EXPORT_SHORT_SIDE=1000;
 async function savePNG(){
-  await new Promise(ok=>{map.once("render",ok);map.triggerRepaint()});
-  const src=map.getCanvas(), k=src.width/src.clientWidth;
-  const c=document.createElement("canvas"); c.width=src.width; c.height=src.height;
+  const src=map.getCanvas(), W=src.clientWidth, H=src.clientHeight, k=EXPORT_SHORT_SIDE/Math.min(W,H);
+  const prev=map.getPixelRatio();
+  map.setPixelRatio(k);
+  await new Promise(ok=>{const t=setTimeout(ok,8000);map.once("idle",()=>{clearTimeout(t);ok()});map.triggerRepaint()});
+  const c=document.createElement("canvas"); c.width=Math.round(W*k); c.height=Math.round(H*k);
   const ctx=c.getContext("2d"); ctx.fillStyle=css("--panel"); ctx.fillRect(0,0,c.width,c.height);
-  ctx.drawImage(src,0,0); ctx.scale(k,k);
+  ctx.drawImage(src,0,0,c.width,c.height);
+  map.setPixelRatio(prev);
+  ctx.scale(c.width/W,c.height/H);
   for(const el of badgeLayer.children){
     if(el.hidden) continue;
     const x=parseFloat(el.style.left), y=parseFloat(el.style.top);
@@ -446,7 +455,7 @@ async function savePNG(){
   const attr=(document.querySelector(".maplibregl-ctrl-attrib-inner")||{}).textContent||"";   // the style's own credits
   if(attr){
     ctx.font=`10px ${css("--sans")}`; ctx.textAlign="right"; ctx.textBaseline="bottom";
-    const w=ctx.measureText(attr).width+10, W=src.clientWidth, H=src.clientHeight;
+    const w=ctx.measureText(attr).width+10;
     ctx.fillStyle="rgba(255,255,255,.8)"; ctx.fillRect(W-w,H-16,w,16); ctx.fillStyle="#333"; ctx.fillText(attr,W-5,H-3);
   }
   return new Promise(ok=>c.toBlob(ok,"image/png"));
@@ -462,6 +471,6 @@ $("save").addEventListener("click",async()=>{
   finally{$("save").disabled=false}
 });
 
-window.__atlas={map,get groups(){return groups},update};   // handy for debugging in the console
+window.__atlas={map,get groups(){return groups},update,savePNG};   // handy for debugging in the console
 </script>
 </body></html>
