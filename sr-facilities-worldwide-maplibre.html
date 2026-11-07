@@ -267,17 +267,18 @@ function hoverHtml(g){
 // Marker layer: one circle per group leader, drawn operating-on-top.
 // ---- Pins (Google-Maps style): teardrop, darker outline, dark center dot ------
 // One icon per color, drawn on a canvas at 2× and tinted from the page's status
-// colors; icon-size scales it per marker. At size 1 a pin is 14.5 × 22.5 px.
-const PIN=new Path2D("M13.5 0C6.04 0 0 6.04 0 13.5C0 23.6 13.5 43 13.5 43S27 23.6 27 13.5C27 6.04 20.96 0 13.5 0Z");
-const PIN_W=14.5, PIN_H=22.5;
-const pinScale=f=>Math.sqrt(sizeOf(f)/11);         // gentler than linear: ring-size pins stay 0.7–1.9×
+// colors; icon-size scales it per marker. The image is 14.5 × 19 px; pins are
+// drawn at 0.8× that (≈ 11.6 × 15 px) at default size.
+const PIN=new Path2D("M13.5 0C6.04 0 0 6.04 0 13.5C0 21 13.5 36 13.5 36S27 21 27 13.5C27 6.04 20.96 0 13.5 0Z");   // 27 × 36, shorter point
+const PIN_W=14.5, PIN_H=19;
+const pinScale=f=>.8*Math.sqrt(sizeOf(f)/11);      // 0.8× base; ring-size pins grow gently (√)
 function shade(hex,k){                               // darken a #rrggbb color by k (0..1)
   const n=parseInt(hex.replace("#","").slice(0,6),16);
   const c=[n>>16,n>>8&255,n&255].map(v=>Math.round(v*(1-k)));
   return`rgb(${c.join(",")})`;
 }
 function pinImage(color){
-  const k=2, c=document.createElement("canvas"); c.width=29*k; c.height=45*k;
+  const k=2, c=document.createElement("canvas"); c.width=29*k; c.height=38*k;
   const x=c.getContext("2d"); x.scale(k,k); x.translate(1,1);
   x.fillStyle=color; x.fill(PIN);
   x.lineWidth=1.2; x.strokeStyle=shade(color,.35); x.stroke(PIN);
