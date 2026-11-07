@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Synchrotron Atlas</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@6.16.0/dist/maplibre-gl.css">
+<style>
+/* Layout: one control strip over a full-width map; the map is the page.
+   Page colors and fonts match index.html / style.css. */
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --fg:#1f2933; --muted:#6b7785; --line:#e3e6ea;
+  --ocean:#dde7ec; --land:#eceee8; --border:#b9c1c6; --coast:#9aa6ad;
+  --accent:#2563eb; --op:#14907a; --plan:#d99a00; --dec:#7b8894;
+  --radius:10px; --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14171c; --panel:#1d2128; --fg:#e6e9ee; --muted:#8b96a3; --line:#2b3039;
+  --ocean:#14202a; --land:#222b31; --border:#3d4952; --coast:#4c5a64;
+  --accent:#60a5fa; --op:#2dbf9f; --plan:#f0b429; --dec:#8b98a3; --shadow:none; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14171c; --panel:#1d2128; --fg:#e6e9ee; --muted:#8b96a3; --line:#2b3039;
+  --ocean:#14202a; --land:#222b31; --border:#3d4952; --coast:#4c5a64;
+  --accent:#60a5fa; --op:#2dbf9f; --plan:#f0b429; --dec:#8b98a3; --shadow:none; color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:2rem 16px;display:grid;gap:12px;max-width:1400px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+.back{flex-basis:100%;font-size:.9rem;color:var(--accent);text-decoration:none}
+.back:hover{text-decoration:underline}
+h1{font-size:2rem;font-weight:700;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.count{font-family:var(--mono);font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 14px}
+.ctl{display:grid;gap:4px;min-width:0}
+.ctl>span{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+/* Every control row is the same height and bottom-aligned, so the small
+   labels above them line up. */
+.controls{--ctl-h:34px}
+.controls select,.controls button{font:inherit;font-size:.875rem;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 8px;height:var(--ctl-h);box-sizing:border-box}
+.controls select:focus-visible,.controls button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.check{display:flex;align-items:center;gap:6px;font-size:.875rem;height:var(--ctl-h)}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+.switch{display:flex;align-items:center;gap:8px;font-size:.875rem;height:var(--ctl-h);cursor:pointer;color:var(--muted)}
+.switch .on{color:var(--fg)}
+.switch input{appearance:none;-webkit-appearance:none;width:40px;height:22px;border-radius:11px;background:var(--muted);position:relative;margin:0;cursor:pointer;flex:none}
+.switch input::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--panel);transition:transform .15s}
+.switch input:checked::after{transform:translateX(18px)}
+@media (prefers-reduced-motion:reduce){.switch input::after{transition:none}}
+.switch:has(input:disabled){opacity:.45;cursor:default}
+.switch input:disabled{cursor:default}
+.controls button{cursor:pointer;background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:500}
+.controls button:disabled{opacity:.45;cursor:default}
+.push{margin-left:auto;display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.push .ctl{margin-right:32px}
+.msg{font-size:.8rem;color:var(--muted);line-height:var(--ctl-h)}
+#map{width:100%;height:clamp(360px,68vh,760px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+#map.link-hover *{cursor:pointer!important}
+.pop{position:fixed;z-index:10;min-width:200px;max-width:min(320px,calc(100vw - 16px));padding:4px 0;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.14);font-size:.875rem}
+.pop a,.pop .nolink{display:grid;gap:1px;padding:6px 12px;color:var(--fg);text-decoration:none}
+.pop a:hover,.pop a:focus-visible{background:var(--bg);outline:none}
+.pop a .nm::after{content:" ↗";color:var(--accent)}
+.pop .st{font-size:.75rem;color:var(--muted)}
+.pop .nolink{color:var(--muted)}
+footer{font-size:.75rem;color:var(--muted)}
+@media (max-width:560px){.push{margin-left:0}}
+/* MapLibre version: overlays on the map */
+.mapwrap{position:relative}
+#map{background:var(--panel)}
+.badges{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:var(--radius)}
+.badge{position:absolute;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#e5484d;color:#fff;border:1.5px solid #fff;font:700 10px/13px var(--sans);text-align:center;transform:translate(-50%,-50%);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.legend{position:absolute;left:10px;bottom:10px;z-index:2;display:grid;gap:2px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-size:12px}
+.legend button{all:unset;display:flex;align-items:center;gap:8px;padding:1px 2px;cursor:pointer;color:var(--fg);border-radius:3px}
+.legend button:focus-visible{outline:2px solid var(--accent)}
+.legend button.off{opacity:.4}
+.legend i{width:10px;height:10px;border-radius:50%;flex:none}
+.maplibregl-popup-content{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font:12px/1.45 var(--sans);box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.maplibregl-popup-tip{display:none}
+.maplibregl-ctrl-reset{font-size:16px;line-height:1}
+</style>
+</head><body>
+
+<div class="wrap">
+  <header>
+    <a class="back" href="index.html">&larr; SRIR Book</a>
+    <h1>Synchrotron Atlas</h1>
+    <span class="count" id="count"></span>
+  </header>
+  <div class="controls">
+    <div class="ctl"><span>Projection</span>
+      <label class="switch"><span class="on">Mercator</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label></div>
+    <label class="ctl"><span>Tile style</span><select id="tiles">
+      <option value="osm">OpenStreetMap</option>
+      <option value="positron">Light (CARTO Positron)</option>
+      <option value="darkmatter">Dark (CARTO Dark Matter)</option>
+      <option value="voyager">Voyager (CARTO)</option>
+      <option value="positron-nl">Light, no labels</option>
+      <option value="darkmatter-nl">Dark, no labels</option>
+      <option value="voyager-nl">Voyager, no labels</option>
+      <option value="satellite">Satellite (Esri)</option>
+      <option value="satellite-labels">Satellite with labels</option>
+      <option value="blank">Blank</option></select></label>
+    <label class="check"><input type="checkbox" id="bysize"> Size by ring diameter</label>
+    <div class="ctl"><span>Size scale</span>
+      <label class="switch"><span class="on">√ diameter</span><input type="checkbox" role="switch" id="scale" aria-label="Linear size scale" disabled><span>Linear</span></label></div>
+    <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
+    <label class="check"><input type="checkbox" id="srir"> Highlight SR-IR</label>
+    <div class="push"><span class="msg" id="msg" aria-live="polite"></span><button id="save" disabled>Save PNG</button></div>
+  </div>
+  <div class="mapwrap">
+    <div id="map"></div>
+    <div id="badges" class="badges"></div>
+    <div id="legend" class="legend"></div>
+  </div>
+  <div id="pop" class="pop" hidden></div>
+</div>
+
+<script type="module">
+// MapLibre GL JS 6 (ES module from jsDelivr; it loads its own worker from there too).
+import * as maplibregl from "https://cdn.jsdelivr.net/npm/maplibre-gl@6.16.0/dist/maplibre-gl.mjs";
+
+// Facility data, links and SR-IR list: copied from sr-facilities-worldwide.html.
+const DATA={"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[5.6896,45.2086]},"properties":{"name":"ESRF-EBS","city":"Grenoble","country":"France","status":"operating","energy_GeV":6.0,"circumference_m":844}},{"type":"Feature","geometry":{"type":"Point","coordinates":[2.1484,48.7092]},"properties":{"name":"SOLEIL","city":"Saint-Aubin","country":"France","status":"operating","energy_GeV":2.75,"circumference_m":354}},{"type":"Feature","geometry":{"type":"Point","coordinates":[13.2172,55.7273]},"properties":{"name":"MAX IV (3 GeV ring)","city":"Lund","country":"Sweden","status":"operating","energy_GeV":3.0,"circumference_m":528}},{"type":"Feature","geometry":{"type":"Point","coordinates":[13.2165,55.726]},"properties":{"name":"MAX IV (1.5 GeV ring)","city":"Lund","country":"Sweden","status":"operating","energy_GeV":1.5,"circumference_m":96}},{"type":"Feature","geometry":{"type":"Point","coordinates":[13.5328,52.4278]},"properties":{"name":"BESSY II","city":"Berlin","country":"Germany","status":"operating","energy_GeV":1.7,"circumference_m":240}},{"type":"Feature","geometry":{"type":"Point","coordinates":[13.531,52.4295]},"properties":{"name":"MLS (PTB)","city":"Berlin","country":"Germany","status":"operating","energy_GeV":0.63,"circumference_m":48}},{"type":"Feature","geometry":{"type":"Point","coordinates":[9.88,53.5763]},"properties":{"name":"PETRA III","city":"Hamburg","country":"Germany","status":"operating","energy_GeV":6.0,"circumference_m":2304}},{"type":"Feature","geometry":{"type":"Point","coordinates":[8.4317,49.0963]},"properties":{"name":"KARA","city":"Karlsruhe","country":"Germany","status":"operating","energy_GeV":2.5,"circumference_m":110}},{"type":"Feature","geometry":{"type":"Point","coordinates":[7.411,51.492]},"properties":{"name":"DELTA","city":"Dortmund","country":"Germany","status":"operating","energy_GeV":1.5,"circumference_m":115}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-1.3108,51.5747]},"properties":{"name":"Diamond Light Source","city":"Harwell","country":"UK","status":"operating","energy_GeV":3.0,"circumference_m":562}},{"type":"Feature","geometry":{"type":"Point","coordinates":[8.2228,47.5385]},"properties":{"name":"SLS 2.0","city":"Villigen","country":"Switzerland","status":"operating","energy_GeV":2.7,"circumference_m":288}},{"type":"Feature","geometry":{"type":"Point","coordinates":[13.8495,45.6476]},"properties":{"name":"Elettra 2.0","city":"Trieste","country":"Italy","status":"planned","energy_GeV":2.4,"circumference_m":259}},{"type":"Feature","geometry":{"type":"Point","coordinates":[2.1104,41.4865]},"properties":{"name":"ALBA","city":"Cerdanyola del Vall\u00e8s","country":"Spain","status":"operating","energy_GeV":3.0,"circumference_m":269}},{"type":"Feature","geometry":{"type":"Point","coordinates":[10.2,56.1694]},"properties":{"name":"ASTRID2","city":"Aarhus","country":"Denmark","status":"operating","energy_GeV":0.58,"circumference_m":46}},{"type":"Feature","geometry":{"type":"Point","coordinates":[19.8945,50.0215]},"properties":{"name":"SOLARIS","city":"Krak\u00f3w","country":"Poland","status":"operating","energy_GeV":1.5,"circumference_m":96}},{"type":"Feature","geometry":{"type":"Point","coordinates":[37.476,55.8]},"properties":{"name":"Kurchatov SRS (Siberia-2)","city":"Moscow","country":"Russia","status":"operating","energy_GeV":2.5,"circumference_m":124}},{"type":"Feature","geometry":{"type":"Point","coordinates":[83.108,54.846]},"properties":{"name":"VEPP-4M (BINP)","city":"Novosibirsk","country":"Russia","status":"operating","energy_GeV":4.5,"circumference_m":366}},{"type":"Feature","geometry":{"type":"Point","coordinates":[83.189,54.933]},"properties":{"name":"SKIF","city":"Koltsovo","country":"Russia","status":"planned","energy_GeV":3.0,"circumference_m":476}},{"type":"Feature","geometry":{"type":"Point","coordinates":[35.8,32.145]},"properties":{"name":"SESAME","city":"Allan","country":"Jordan","status":"operating","energy_GeV":2.5,"circumference_m":133}},{"type":"Feature","geometry":{"type":"Point","coordinates":[44.51,40.18]},"properties":{"name":"CANDLE","city":"Yerevan","country":"Armenia","status":"planned","energy_GeV":3.0,"circumference_m":216}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-87.981,41.703]},"properties":{"name":"APS-U","city":"Lemont","country":"USA","status":"operating","energy_GeV":6.0,"circumference_m":1104}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-72.876,40.8695]},"properties":{"name":"NSLS-II","city":"Upton","country":"USA","status":"operating","energy_GeV":3.0,"circumference_m":792}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.253,37.876]},"properties":{"name":"ALS (ALS-U upgrade)","city":"Berkeley","country":"USA","status":"operating","energy_GeV":1.9,"circumference_m":197}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.205,37.418]},"properties":{"name":"SSRL (SPEAR3)","city":"Menlo Park","country":"USA","status":"operating","energy_GeV":3.0,"circumference_m":234}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-76.472,42.444]},"properties":{"name":"CHESS (CESR)","city":"Ithaca","country":"USA","status":"operating","energy_GeV":6.0,"circumference_m":768}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-91.18,30.406]},"properties":{"name":"CAMD","city":"Baton Rouge","country":"USA","status":"operating","energy_GeV":1.3,"circumference_m":55}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-77.216,39.133]},"properties":{"name":"SURF III (NIST)","city":"Gaithersburg","country":"USA","status":"operating","energy_GeV":0.42,"circumference_m":5}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-106.6315,52.1386]},"properties":{"name":"Canadian Light Source","city":"Saskatoon","country":"Canada","status":"operating","energy_GeV":2.9,"circumference_m":171}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-47.053,-22.807]},"properties":{"name":"Sirius (LNLS)","city":"Campinas","country":"Brazil","status":"operating","energy_GeV":3.0,"circumference_m":518}},{"type":"Feature","geometry":{"type":"Point","coordinates":[134.43,34.948]},"properties":{"name":"SPring-8","city":"Sayo","country":"Japan","status":"operating","energy_GeV":8.0,"circumference_m":1436}},{"type":"Feature","geometry":{"type":"Point","coordinates":[134.438,34.947]},"properties":{"name":"NewSUBARU","city":"Ako","country":"Japan","status":"operating","energy_GeV":1.5,"circumference_m":119}},{"type":"Feature","geometry":{"type":"Point","coordinates":[140.075,36.15]},"properties":{"name":"Photon Factory (KEK)","city":"Tsukuba","country":"Japan","status":"operating","energy_GeV":2.5,"circumference_m":187}},{"type":"Feature","geometry":{"type":"Point","coordinates":[140.079,36.153]},"properties":{"name":"PF-AR (KEK)","city":"Tsukuba","country":"Japan","status":"operating","energy_GeV":6.5,"circumference_m":377}},{"type":"Feature","geometry":{"type":"Point","coordinates":[140.854,38.259]},"properties":{"name":"NanoTerasu","city":"Sendai","country":"Japan","status":"operating","energy_GeV":3.0,"circumference_m":349}},{"type":"Feature","geometry":{"type":"Point","coordinates":[137.168,34.913]},"properties":{"name":"UVSOR-III","city":"Okazaki","country":"Japan","status":"operating","energy_GeV":0.75,"circumference_m":53}},{"type":"Feature","geometry":{"type":"Point","coordinates":[132.712,34.402]},"properties":{"name":"HiSOR","city":"Higashi-Hiroshima","country":"Japan","status":"operating","energy_GeV":0.7,"circumference_m":22}},{"type":"Feature","geometry":{"type":"Point","coordinates":[130.45,33.362]},"properties":{"name":"SAGA-LS","city":"Tosu","country":"Japan","status":"operating","energy_GeV":1.4,"circumference_m":75}},{"type":"Feature","geometry":{"type":"Point","coordinates":[137.096,35.17]},"properties":{"name":"Aichi SR","city":"Seto","country":"Japan","status":"operating","energy_GeV":1.2,"circumference_m":72}},{"type":"Feature","geometry":{"type":"Point","coordinates":[121.598,31.184]},"properties":{"name":"SSRF","city":"Shanghai","country":"China","status":"operating","energy_GeV":3.5,"circumference_m":432}},{"type":"Feature","geometry":{"type":"Point","coordinates":[116.247,39.911]},"properties":{"name":"BSRF (BEPCII)","city":"Beijing","country":"China","status":"operating","energy_GeV":2.5,"circumference_m":240}},{"type":"Feature","geometry":{"type":"Point","coordinates":[116.67,40.4]},"properties":{"name":"HEPS","city":"Beijing (Huairou)","country":"China","status":"planned","energy_GeV":6.0,"circumference_m":1360}},{"type":"Feature","geometry":{"type":"Point","coordinates":[117.26,31.838]},"properties":{"name":"HLS-II (NSRL)","city":"Hefei","country":"China","status":"operating","energy_GeV":0.8,"circumference_m":66}},{"type":"Feature","geometry":{"type":"Point","coordinates":[117.12,31.86]},"properties":{"name":"HALF","city":"Hefei","country":"China","status":"planned","energy_GeV":2.2,"circumference_m":480}},{"type":"Feature","geometry":{"type":"Point","coordinates":[121.008,24.788]},"properties":{"name":"TLS (NSRRC)","city":"Hsinchu","country":"Taiwan","status":"operating","energy_GeV":1.5,"circumference_m":120}},{"type":"Feature","geometry":{"type":"Point","coordinates":[121.006,24.789]},"properties":{"name":"TPS (NSRRC)","city":"Hsinchu","country":"Taiwan","status":"operating","energy_GeV":3.0,"circumference_m":518}},{"type":"Feature","geometry":{"type":"Point","coordinates":[129.32,36.005]},"properties":{"name":"PLS-II","city":"Pohang","country":"South Korea","status":"operating","energy_GeV":3.0,"circumference_m":281}},{"type":"Feature","geometry":{"type":"Point","coordinates":[127.43,36.72]},"properties":{"name":"Korea 4GSR","city":"Ochang","country":"South Korea","status":"planned","energy_GeV":4.0,"circumference_m":800}},{"type":"Feature","geometry":{"type":"Point","coordinates":[75.844,22.662]},"properties":{"name":"Indus-2 (RRCAT)","city":"Indore","country":"India","status":"operating","energy_GeV":2.5,"circumference_m":172}},{"type":"Feature","geometry":{"type":"Point","coordinates":[102.023,14.879]},"properties":{"name":"Siam Photon Source (SLRI)","city":"Nakhon Ratchasima","country":"Thailand","status":"operating","energy_GeV":1.2,"circumference_m":81}},{"type":"Feature","geometry":{"type":"Point","coordinates":[103.778,1.298]},"properties":{"name":"SSLS (Helios 2)","city":"Singapore","country":"Singapore","status":"operating","energy_GeV":0.7,"circumference_m":11}},{"type":"Feature","geometry":{"type":"Point","coordinates":[145.143,-37.914]},"properties":{"name":"Australian Synchrotron","city":"Clayton","country":"Australia","status":"operating","energy_GeV":3.0,"circumference_m":216}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-2.64,53.344]},"properties":{"name":"SRS","city":"Daresbury","country":"UK","status":"decommissioned","energy_GeV":2.0,"circumference_m":96}},{"type":"Feature","geometry":{"type":"Point","coordinates":[2.173,48.7]},"properties":{"name":"LURE (DCI / Super-ACO)","city":"Orsay","country":"France","status":"decommissioned","energy_GeV":1.85,"circumference_m":95}},{"type":"Feature","geometry":{"type":"Point","coordinates":[13.3,52.489]},"properties":{"name":"BESSY I","city":"Berlin-Wilmersdorf","country":"Germany","status":"decommissioned","energy_GeV":0.8,"circumference_m":62}},{"type":"Feature","geometry":{"type":"Point","coordinates":[9.878,53.575]},"properties":{"name":"DORIS III (HASYLAB)","city":"Hamburg","country":"Germany","status":"decommissioned","energy_GeV":4.5,"circumference_m":289}},{"type":"Feature","geometry":{"type":"Point","coordinates":[10.201,56.169]},"properties":{"name":"ASTRID","city":"Aarhus","country":"Denmark","status":"decommissioned","energy_GeV":0.58,"circumference_m":40}},{"type":"Feature","geometry":{"type":"Point","coordinates":[12.675,41.825]},"properties":{"name":"ADONE","city":"Frascati","country":"Italy","status":"decommissioned","energy_GeV":1.5,"circumference_m":105}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-72.881,40.869]},"properties":{"name":"NSLS (X-ray ring)","city":"Upton","country":"USA","status":"decommissioned","energy_GeV":2.8,"circumference_m":170}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-89.219,42.918]},"properties":{"name":"Aladdin (SRC)","city":"Stoughton","country":"USA","status":"decommissioned","energy_GeV":0.8,"circumference_m":89}},{"type":"Feature","geometry":{"type":"Point","coordinates":[-47.058,-22.808]},"properties":{"name":"UVX (LNLS)","city":"Campinas","country":"Brazil","status":"decommissioned","energy_GeV":1.37,"circumference_m":93}}]};
+// Facility websites (official site where one exists, else Wikipedia / host
+// institute). Clicking a marker opens it. Checked 2026-11-04.
+const URLS={
+  "ESRF-EBS":"https://www.esrf.fr/",
+  "SOLEIL":"https://www.synchrotron-soleil.fr/",
+  "MAX IV (3 GeV ring)":"https://www.maxiv.lu.se/",
+  "MAX IV (1.5 GeV ring)":"https://www.maxiv.lu.se/",
+  "BESSY II":"https://www.helmholtz-berlin.de/forschung/quellen/bessy/index_en.html",
+  "MLS (PTB)":"https://en.wikipedia.org/wiki/Metrology_Light_Source",
+  "PETRA III":"https://photon-science.desy.de/facilities/petra_iii/",
+  "KARA":"https://www.ibpt.kit.edu/kara.php",
+  "DELTA":"https://www.delta.tu-dortmund.de/",
+  "Diamond Light Source":"https://www.diamond.ac.uk/",
+  "SLS 2.0":"https://www.psi.ch/en/sls",
+  "Elettra 2.0":"https://www.elettra.eu/",
+  "ALBA":"https://www.cells.es/",
+  "ASTRID2":"https://www.isa.au.dk/",
+  "SOLARIS":"https://synchrotron.uj.edu.pl/en_GB/",
+  "Kurchatov SRS (Siberia-2)":"https://en.wikipedia.org/wiki/Kurchatov_Institute",
+  "VEPP-4M (BINP)":"https://www.inp.nsk.su/",
+  "SKIF":"https://srf-skif.ru/",
+  "SESAME":"https://www.sesame.org.jo/",
+  "CANDLE":"https://candle.am/",
+  "APS-U":"https://www.aps.anl.gov/",
+  "NSLS-II":"https://www.bnl.gov/nsls2/",
+  "ALS (ALS-U upgrade)":"https://als.lbl.gov/",
+  "SSRL (SPEAR3)":"https://www-ssrl.slac.stanford.edu/",
+  "CHESS (CESR)":"https://www.chess.cornell.edu/",
+  "CAMD":"https://www.lsu.edu/camd/",
+  "SURF III (NIST)":"https://www.nist.gov/laboratories/tools-instruments/synchrotron-ultraviolet-radiation-facility-surf-iii",
+  "Canadian Light Source":"https://www.lightsource.ca/",
+  "Sirius (LNLS)":"https://lnls.cnpem.br/",
+  "SPring-8":"https://www.spring8.or.jp/en/",
+  "NewSUBARU":"https://www.lasti.u-hyogo.ac.jp/NS/",
+  "Photon Factory (KEK)":"https://www2.kek.jp/imss/pf/eng/",
+  "PF-AR (KEK)":"https://www2.kek.jp/imss/pf/eng/",
+  "NanoTerasu":"https://nanoterasu.jp/",
+  "UVSOR-III":"https://www.uvsor.ims.ac.jp/",
+  "HiSOR":"https://www.hsrc.hiroshima-u.ac.jp/english/",
+  "SAGA-LS":"https://www.saga-ls.jp/",
+  "Aichi SR":"https://www.aichisr.jp/",
+  "SSRF":"https://ssrf.sari.ac.cn/",
+  "BSRF (BEPCII)":"https://bsrf.ihep.cas.cn/",
+  "HEPS":"http://english.ihep.cas.cn/heps/",
+  "HLS-II (NSRL)":"https://www.nsrl.ustc.edu.cn/",
+  "HALF":"https://www.nsrl.ustc.edu.cn/",
+  "TLS (NSRRC)":"https://www.nsrrc.org.tw/",
+  "TPS (NSRRC)":"https://www.nsrrc.org.tw/",
+  "PLS-II":"https://pal.postech.ac.kr/",
+  "Korea 4GSR":"https://kls.kbsi.re.kr/",
+  "Indus-2 (RRCAT)":"https://www.rrcat.gov.in/",
+  "Siam Photon Source (SLRI)":"https://www.slri.or.th/",
+  "SSLS (Helios 2)":"https://ssls.nus.edu.sg/",
+  "Australian Synchrotron":"https://www.ansto.gov.au/facilities/australian-synchrotron",
+  "SRS":"https://en.wikipedia.org/wiki/Synchrotron_Radiation_Source",
+  "BESSY I":"https://en.wikipedia.org/wiki/BESSY",
+  "DORIS III (HASYLAB)":"https://en.wikipedia.org/wiki/DORIS_(particle_accelerator)",
+  "ASTRID":"https://www.isa.au.dk/",
+  "ADONE":"https://en.wikipedia.org/wiki/ADONE",
+  "NSLS (X-ray ring)":"https://en.wikipedia.org/wiki/National_Synchrotron_Light_Source",
+  "Aladdin (SRC)":"https://en.wikipedia.org/wiki/Synchrotron_Radiation_Center",
+  "UVX (LNLS)":"https://en.wikipedia.org/wiki/Brazilian_Synchrotron_Light_Laboratory"
+};
+// Facilities with (or, if decommissioned, that had) a synchrotron-infrared
+// beamline. "Highlight SR-IR" dims every other marker. Names match DATA.
+const SRIR=new Set([
+  "ESRF-EBS","SOLEIL","BESSY II","MLS (PTB)","KARA","Diamond Light Source","SLS 2.0",
+  "Elettra 2.0","ALBA","SOLARIS","SESAME","NSLS-II","ALS (ALS-U upgrade)","CAMD",
+  "Canadian Light Source","Sirius (LNLS)","SPring-8","UVSOR-III","SSRF","HLS-II (NSRL)",
+  "TLS (NSRRC)","Siam Photon Source (SLRI)","SSLS (Helios 2)","Australian Synchrotron",
+  "SRS","LURE (DCI / Super-ACO)","NSLS (X-ray ring)","Aladdin (SRC)","UVX (LNLS)"
+]);
+const STATUSES=[["operating","Operating","--op"],["planned","Planned","--plan"],["decommissioned","Decommissioned","--dec"]];
+
+const $=id=>document.getElementById(id);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const feats=DATA.features.map(f=>{const p=f.properties;return{lon:f.geometry.coordinates[0],lat:f.geometry.coordinates[1],...p,diam:p.circumference_m/Math.PI}});
+const dmax=Math.max(...feats.map(f=>f.diam));
+$("count").textContent=STATUSES.map(([k,l])=>feats.filter(f=>f.status===k).length+" "+l.toLowerCase()).join(" · ");
+const STATUS_LABEL=Object.fromEntries(STATUSES.map(([k,l])=>[k,l]));
+const RANK={operating:0,planned:1,decommissioned:2};
+const hidden=new Set();                              // statuses switched off in the legend
+
+function sizeOf(f){                                  // marker diameter in px (same as the Plotly page)
+  if(!$("bysize").checked) return 11;
+  const t=$("scale").checked?f.diam/dmax:Math.sqrt(f.diam/dmax);
+  return 5+33*t;
+}
+
+// ---- Tile styles (no API keys) ------------------------------------------------
+// OSM and Esri are raster tiles; CARTO is used through its vector GL styles
+// (its raster tiles now return an "API key required" image).
+const OSM_ATTR='© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+const CARTO_ATTR=OSM_ATTR+' © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>';
+const ESRI_ATTR='Imagery © <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics, and the GIS User Community';
+const carto=name=>({url:`https://basemaps.cartocdn.com/gl/${name}-gl-style/style.json`,attr:CARTO_ATTR});
+const esri=(path,attr)=>({tiles:[`https://server.arcgisonline.com/ArcGIS/rest/services/${path}/MapServer/tile/{z}/{y}/{x}`],attr,maxzoom:19});
+const TILES={
+  "osm":[{tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],attr:OSM_ATTR,maxzoom:19}],
+  "positron":carto("positron"), "darkmatter":carto("dark-matter"), "voyager":carto("voyager"),
+  "positron-nl":carto("positron-nolabels"), "darkmatter-nl":carto("dark-matter-nolabels"), "voyager-nl":carto("voyager-nolabels"),
+  "satellite":[esri("World_Imagery",ESRI_ATTR)],
+  "satellite-labels":[esri("World_Imagery",ESRI_ATTR),esri("Reference/World_Boundaries_and_Places","Labels © Esri")],
+  "blank":[]
+};
+const globe=()=>$("proj").checked;
+function styleFor(key){
+  if(!Array.isArray(TILES[key])) return TILES[key].url;          // vector style by URL
+  const s={version:8,sources:{},layers:[{id:"bg",type:"background",paint:{"background-color":key==="blank"?css("--panel"):"#aad3df"}}],
+    projection:{type:globe()?"globe":"mercator"}};
+  TILES[key].forEach((l,i)=>{
+    s.sources["tiles"+i]={type:"raster",tiles:l.tiles,tileSize:256,attribution:l.attr,maxzoom:l.maxzoom||20};
+    s.layers.push({id:"tiles"+i,type:"raster",source:"tiles"+i});
+  });
+  return s;
+}
+
+// ---- Map ----------------------------------------------------------------------
+// Default zoom: flat map ≈ full width; globe ≈ 90% of the box height
+// (a globe at zoom z is 512·2^z/π px across).
+const homeZoom=()=>{
+  const el=$("map");
+  return globe()?Math.log2(.9*Math.min(el.clientWidth,el.clientHeight)*Math.PI/512)
+               :Math.max(0,Math.log2(el.clientWidth/512)-.15);
+};
+const HOME={center:[10,25]};
+const map=new maplibregl.Map({
+  container:"map", style:styleFor($("tiles").value), center:HOME.center, zoom:homeZoom(),
+  attributionControl:{compact:true}, canvasContextAttributes:{preserveDrawingBuffer:true}   // needed for Save PNG
+});
+map.addControl(new maplibregl.NavigationControl({visualizePitch:false}),"top-right");
+// Reset view (like Plotly's home button): world view, north up.
+map.addControl({
+  onAdd(){const d=document.createElement("div");d.className="maplibregl-ctrl maplibregl-ctrl-group";
+    d.innerHTML='<button type="button" class="maplibregl-ctrl-reset" title="Reset view" aria-label="Reset view">⌂</button>';
+    d.firstChild.onclick=()=>map.easeTo({center:HOME.center,zoom:homeZoom(),bearing:0,pitch:0});return d},
+  onRemove(){}
+},"top-right");
+
+// ---- Overlapping markers: same rule as the Plotly page ------------------------
+// Markers whose centers are closer than ~half a marker size merge into one group,
+// led by the highest-priority facility (operating > planned > decommissioned,
+// then larger ring). Hover lists all, click opens a link menu, a badge shows the count.
+let groups=[];
+function visible(f){                                 // globe: is the point on the near side?
+  if(!globe()) return true;
+  const c=map.getCenter(), r=Math.PI/180, lo=f.lon*r, la=f.lat*r, clo=c.lng*r, cla=c.lat*r;
+  return Math.sin(la)*Math.sin(cla)+Math.cos(la)*Math.cos(cla)*Math.cos(lo-clo)>.02;
+}
+function computeGroups(){
+  const list=feats.filter(f=>!hidden.has(f.status)).sort((a,b)=>RANK[a.status]-RANK[b.status]||b.diam-a.diam);
+  const xy=new Map(list.map(f=>{const q=visible(f)?map.project([f.lon,f.lat]):null;return[f,q&&[q.x,q.y]]}));
+  const thr=(a,b)=>Math.max(6,(sizeOf(a)+sizeOf(b))/2*.5);
+  const out=[], used=new Set();
+  for(const f of list){
+    if(used.has(f)) continue;
+    used.add(f);
+    const g=[f], a=xy.get(f);
+    if(a) for(const o of list){
+      const b=xy.get(o);
+      if(used.has(o)||!b) continue;
+      if(Math.hypot(a[0]-b[0],a[1]-b[1])<thr(f,o)){g.push(o);used.add(o)}
+    }
+    out.push(g);
+  }
+  return out;
+}
+function hoverHtml(g){
+  const ir=f=>$("srir").checked&&SRIR.has(f.name)?" · SR-IR":"";
+  if(g.length===1){
+    const f=g[0];
+    return `<b>${f.name}</b><br>${f.city}, ${f.country}<br>${STATUS_LABEL[f.status]}${ir(f)}<br>`+
+      `${f.energy_GeV} GeV · C = ${f.circumference_m} m · Ø ≈ ${f.diam.toFixed(0)} m`+
+      (URLS[f.name]?"<br><i>Click to open website ↗</i>":"");
+  }
+  return `<b>${g.length} facilities</b><br>`+
+    g.map(f=>`${f.name} — ${STATUS_LABEL[f.status]}, ${f.energy_GeV} GeV${ir(f)}`).join("<br>")+
+    "<br><i>Click for links ↗</i>";
+}
+
+// Marker layer: one circle per group leader, drawn operating-on-top.
+function featureCollection(){
+  const byStatus=$("bystatus").checked, hl=$("srir").checked, tok=Object.fromEntries(STATUSES.map(([k,,t])=>[k,t]));
+  return{type:"FeatureCollection",features:groups.map((g,i)=>{const f=g[0];return{type:"Feature",
+    geometry:{type:"Point",coordinates:[f.lon,f.lat]},
+    properties:{gi:i,r:sizeOf(f)/2,color:byStatus?css(tok[f.status]):css("--accent"),
+      op:hl&&!g.some(x=>SRIR.has(x.name))?.2:.9,z:3-RANK[f.status]}}})};
+}
+function addLayers(){
+  if(map.getSource("fac")) return;
+  map.addSource("fac",{type:"geojson",data:featureCollection()});
+  map.addLayer({id:"fac",type:"circle",source:"fac",
+    layout:{"circle-sort-key":["get","z"]},
+    paint:{"circle-radius":["get","r"],"circle-color":["get","color"],"circle-opacity":["get","op"],
+      "circle-stroke-width":1,"circle-stroke-color":"#ffffff","circle-stroke-opacity":["get","op"]}});
+}
+function update(){                                   // regroup + redraw markers, badges, legend
+  if(!map.isStyleLoaded()&&!map.getSource("fac")) return;
+  groups=computeGroups();
+  const src=map.getSource("fac");
+  if(src) src.setData(featureCollection());
+  positionBadges(); drawLegend();
+}
+
+// Count badges: HTML dots that follow the map every frame.
+const badgeLayer=$("badges");
+function positionBadges(){
+  const multi=groups.filter(g=>g.length>1);
+  while(badgeLayer.children.length<multi.length) badgeLayer.appendChild(document.createElement("span")).className="badge";
+  while(badgeLayer.children.length>multi.length) badgeLayer.lastChild.remove();
+  multi.forEach((g,i)=>{
+    const f=g[0], el=badgeLayer.children[i], vis=visible(f);
+    el.hidden=!vis;
+    if(!vis) return;
+    const q=map.project([f.lon,f.lat]), r=sizeOf(f)/2;
+    el.textContent=g.length; el.style.left=(q.x+r*.8)+"px"; el.style.top=(q.y-r*.8)+"px";
+  });
+}
+
+// Legend: click a status to hide/show it (like Plotly's legend).
+function drawLegend(){
+  const lg=$("legend");
+  lg.hidden=!$("bystatus").checked;
+  lg.innerHTML=STATUSES.map(([k,l,t])=>`<button type="button" data-k="${k}" class="${hidden.has(k)?"off":""}" aria-pressed="${!hidden.has(k)}">`+
+    `<i style="background:${css(t)}"></i>${l} (${feats.filter(f=>f.status===k).length})</button>`).join("");
+}
+$("legend").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-k]");
+  if(!b) return;
+  const k=b.dataset.k; hidden.has(k)?hidden.delete(k):hidden.add(k); update();
+});
+
+// ---- Interaction ----------------------------------------------------------------
+const tip=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:10,maxWidth:"340px"});
+const groupAt=e=>groups[e.features[0].properties.gi];
+map.on("mousemove","fac",e=>{
+  const g=groupAt(e);
+  if(!g) return;
+  const lngLat=[g[0].lon,g[0].lat];
+  while(Math.abs(e.lngLat.lng-lngLat[0])>180) lngLat[0]+=e.lngLat.lng>lngLat[0]?360:-360;   // world copies
+  tip.setLngLat(lngLat).setHTML(hoverHtml(g)).addTo(map);
+  map.getCanvas().style.cursor=g.length>1||URLS[g[0].name]?"pointer":"";
+});
+map.on("mouseleave","fac",()=>{tip.remove();map.getCanvas().style.cursor=""});
+map.on("click","fac",e=>{
+  const g=groupAt(e);
+  if(!g) return;
+  if(g.length===1){const u=URLS[g[0].name];if(u) window.open(u,"_blank","noopener");return}
+  const x=e.originalEvent.clientX, y=e.originalEvent.clientY;
+  setTimeout(()=>openPop(g,x,y));
+});
+
+// Link menu for a group.
+const pop=$("pop");
+function openPop(g,x,y){
+  pop.innerHTML=g.map(f=>{
+    const u=URLS[f.name], body=`<span class="nm">${f.name}</span><span class="st">${STATUS_LABEL[f.status]} · ${f.city}</span>`;
+    return u?`<a href="${u}" target="_blank" rel="noopener">${body}</a>`:`<div class="nolink">${body}</div>`;
+  }).join("");
+  pop.hidden=false;
+  const w=pop.offsetWidth, h=pop.offsetHeight;
+  pop.style.left=Math.max(8,Math.min(x+10,innerWidth-w-8))+"px";
+  pop.style.top=Math.max(8,Math.min(y+10,innerHeight-h-8))+"px";
+}
+function closePop(){pop.hidden=true}
+document.addEventListener("click",e=>{if(!pop.hidden&&!pop.contains(e.target))closePop()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closePop()});
+pop.addEventListener("click",e=>{if(e.target.closest("a"))setTimeout(closePop)});
+window.addEventListener("scroll",closePop,{passive:true});
+
+// Every new style (initial or from the Tile style menu): apply the projection,
+// then add the facility layer on top.
+map.on("style.load",()=>{map.setProjection({type:globe()?"globe":"mercator"});addLayers();update()});
+map.on("move",positionBadges);
+map.on("movestart",closePop);
+map.on("moveend",update);
+map.on("load",()=>{$("save").disabled=false});
+
+// ---- Controls ---------------------------------------------------------------------
+document.querySelectorAll(".switch input").forEach(inp=>inp.addEventListener("change",()=>{
+  const [off,on]=inp.parentElement.querySelectorAll("span");
+  off.classList.toggle("on",!inp.checked);on.classList.toggle("on",inp.checked);
+}));
+// Switching projection starts from that projection's default view (as on the Plotly page).
+$("proj").addEventListener("change",()=>{
+  map.setProjection({type:globe()?"globe":"mercator"});
+  map.jumpTo({center:HOME.center,zoom:homeZoom(),bearing:0,pitch:0});
+  update();
+});
+$("tiles").addEventListener("change",()=>map.setStyle(styleFor($("tiles").value)));   // style.load re-adds markers
+$("bysize").addEventListener("change",()=>{$("scale").disabled=!$("bysize").checked;update()});
+["scale","bystatus","srir"].forEach(id=>$(id).addEventListener("change",update));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if($("tiles").value==="blank")map.setStyle(styleFor("blank"));else update()});
+
+// ---- Save PNG: map canvas + badges + attribution ------------------------------------
+async function savePNG(){
+  await new Promise(ok=>{map.once("render",ok);map.triggerRepaint()});
+  const src=map.getCanvas(), k=src.width/src.clientWidth;
+  const c=document.createElement("canvas"); c.width=src.width; c.height=src.height;
+  const ctx=c.getContext("2d"); ctx.fillStyle=css("--panel"); ctx.fillRect(0,0,c.width,c.height);
+  ctx.drawImage(src,0,0); ctx.scale(k,k);
+  for(const el of badgeLayer.children){
+    if(el.hidden) continue;
+    const x=parseFloat(el.style.left), y=parseFloat(el.style.top);
+    ctx.beginPath(); ctx.arc(x,y,8,0,2*Math.PI); ctx.fillStyle="#e5484d"; ctx.fill();
+    ctx.lineWidth=1.5; ctx.strokeStyle="#fff"; ctx.stroke();
+    ctx.fillStyle="#fff"; ctx.font=`700 10px ${css("--sans")}`; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(el.textContent,x,y+.5);
+  }
+  const t=TILES[$("tiles").value], attr=[...new Set((Array.isArray(t)?t:[t]).map(l=>l.attr.replace(/<[^>]+>/g,"")))].join(" · ");
+  if(attr){
+    ctx.font=`10px ${css("--sans")}`; ctx.textAlign="right"; ctx.textBaseline="bottom";
+    const w=ctx.measureText(attr).width+10, W=src.clientWidth, H=src.clientHeight;
+    ctx.fillStyle="rgba(255,255,255,.8)"; ctx.fillRect(W-w,H-16,w,16); ctx.fillStyle="#333"; ctx.fillText(attr,W-5,H-3);
+  }
+  return new Promise(ok=>c.toBlob(ok,"image/png"));
+}
+$("save").addEventListener("click",async()=>{
+  $("save").disabled=true; $("msg").textContent="Rendering…";
+  try{
+    const blob=await savePNG(), name="synchrotrons-"+(globe()?"globe":"mercator")+"-"+$("tiles").value+".png";
+    const u=URL.createObjectURL(blob), a=document.createElement("a"); a.href=u; a.download=name;
+    document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
+    $("msg").textContent="Saved "+name;
+  }catch(e){$("msg").textContent="Couldn't save the PNG"+(e&&e.message?": "+e.message:".")}
+  finally{$("save").disabled=false}
+});
+
+window.__atlas={map,get groups(){return groups},update};   // handy for debugging in the console
+</script>
+</body></html>
