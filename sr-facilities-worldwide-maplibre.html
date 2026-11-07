@@ -238,9 +238,13 @@ const homeZoom=()=>{
 const HOME={center:[10,25]};
 const map=new maplibregl.Map({
   container:"map", style:STYLE, center:HOME.center, zoom:homeZoom(),
-  attributionControl:{compact:true}, canvasContextAttributes:{preserveDrawingBuffer:true}   // needed for Save PNG
+  attributionControl:{compact:true}, canvasContextAttributes:{preserveDrawingBuffer:true},   // needed for Save PNG
+  renderWorldCopies:false,         // draw the world once, even fully zoomed out (no repeated continents)
+  dragRotate:false, pitchWithRotate:false, touchPitch:false, maxPitch:0   // north always up, no tilt
 });
-map.addControl(new maplibregl.NavigationControl({visualizePitch:false}),"top-right");
+map.touchZoomRotate.disableRotation();               // pinch zooms but doesn't twist
+map.keyboard.disableRotation();
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-right");
 // Reset view (like Plotly's home button): world view, north up.
 map.addControl({
   onAdd(){const d=document.createElement("div");d.className="maplibregl-ctrl maplibregl-ctrl-group";
