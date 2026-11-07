@@ -1,72 +1,44 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Synchrotron Atlas</title>
+<title>Accelerator Atlas</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@6.16.0/dist/maplibre-gl.css">
 <style>
-/* Layout: one control strip over a full-width map; the map is the page.
-   Page colors and fonts match index.html / style.css. */
+/* Accelerator Atlas (MapLibre). Colors and fonts match index.html / style.css. */
 :root{
   --bg:#f5f6f8; --panel:#ffffff; --fg:#1f2933; --muted:#6b7785; --line:#e3e6ea;
-  --ocean:#dde7ec; --land:#eceee8; --border:#b9c1c6; --coast:#9aa6ad;
   --accent:#2563eb; --op:#14907a; --plan:#d99a00; --dec:#7b8894;
   --radius:10px; --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  --mono:ui-monospace,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#14171c; --panel:#1d2128; --fg:#e6e9ee; --muted:#8b96a3; --line:#2b3039;
-  --ocean:#14202a; --land:#222b31; --border:#3d4952; --coast:#4c5a64;
   --accent:#60a5fa; --op:#2dbf9f; --plan:#f0b429; --dec:#8b98a3; --shadow:none; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#14171c; --panel:#1d2128; --fg:#e6e9ee; --muted:#8b96a3; --line:#2b3039;
-  --ocean:#14202a; --land:#222b31; --border:#3d4952; --coast:#4c5a64;
   --accent:#60a5fa; --op:#2dbf9f; --plan:#f0b429; --dec:#8b98a3; --shadow:none; color-scheme:dark}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5}
 .wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:2rem 16px;display:grid;gap:12px;max-width:1400px;margin:0 auto}
-header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
-.back{flex-basis:100%;font-size:.9rem;color:var(--accent);text-decoration:none}
-.back:hover{text-decoration:underline}
-h1{font-size:2rem;font-weight:700;letter-spacing:-.01em;margin:0;text-wrap:balance}
-.count{font-family:var(--mono);font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
-.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 14px}
-.ctl{display:grid;gap:4px;min-width:0}
-.ctl>span{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-/* Every control row is the same height and bottom-aligned, so the small
-   labels above them line up. */
-.controls{--ctl-h:34px}
-.controls select,.controls button{font:inherit;font-size:.875rem;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 8px;height:var(--ctl-h);box-sizing:border-box}
-.controls select:focus-visible,.controls button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.check{display:flex;align-items:center;gap:6px;font-size:.875rem;height:var(--ctl-h)}
-.check input{accent-color:var(--accent);width:16px;height:16px}
+
+/* Controls: one row of three boxes (PROJECTION | MARKER | DOWNLOAD) with a gap. */
+.controls{--ctl-h:34px;display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
+.group{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:8px 14px}
+.group-title{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.group.push{margin-left:auto;gap:10px}
+@media (max-width:560px){.group.push{margin-left:0}}
+.msg{font-size:.8rem;color:var(--muted)}
+.msg:empty{display:none}
+.controls button{font:inherit;font-size:.875rem;font-weight:500;height:var(--ctl-h);box-sizing:border-box;padding:0 10px;border-radius:6px;cursor:pointer;
+  background:var(--fg);color:var(--bg);border:1px solid var(--fg)}
+.controls button.secondary{background:var(--bg);color:var(--fg);border-color:var(--line)}
+.controls button:disabled{opacity:.45;cursor:default}
+.controls button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Sliding switches (projection, marker style) */
 .switch{display:flex;align-items:center;gap:8px;font-size:.875rem;height:var(--ctl-h);cursor:pointer;color:var(--muted)}
 .switch .on{color:var(--fg)}
 .switch input{appearance:none;-webkit-appearance:none;width:40px;height:22px;border-radius:11px;background:var(--muted);position:relative;margin:0;cursor:pointer;flex:none}
 .switch input::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--panel);transition:transform .15s}
 .switch input:checked::after{transform:translateX(18px)}
-@media (prefers-reduced-motion:reduce){.switch input::after{transition:none}}
-.switch:has(input:disabled){opacity:.45;cursor:default}
-.switch input:disabled{cursor:default}
-.controls button{cursor:pointer;background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:500}
-.controls button:disabled{opacity:.45;cursor:default}
-.push{margin-left:auto;display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
-.push .ctl{margin-right:32px}
-.msg{font-size:.8rem;color:var(--muted);line-height:var(--ctl-h)}
-#map{width:100%;height:clamp(360px,68vh,760px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
-#map.link-hover *{cursor:pointer!important}
-.pop{position:fixed;z-index:10;min-width:200px;max-width:min(320px,calc(100vw - 16px));padding:4px 0;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.14);font-size:.875rem}
-.pop a,.pop .nolink{display:grid;gap:1px;padding:6px 12px;color:var(--fg);text-decoration:none}
-.pop a:hover,.pop a:focus-visible{background:var(--bg);outline:none}
-.pop a .nm::after{content:" ↗";color:var(--accent)}
-.pop .st{font-size:.75rem;color:var(--muted)}
-.pop .nolink{color:var(--muted)}
-footer{font-size:.75rem;color:var(--muted)}
-@media (max-width:560px){.push{margin-left:0}}
-/* MapLibre version */
-/* Controls: one row of three boxes (Projection | Marker | buttons) with a gap. */
-.controls{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;background:none;border:0;box-shadow:none;padding:0}
-.group{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:8px 14px}
-.group-title{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.group.push{margin-left:auto;gap:10px;align-items:center}
 /* On/off toggle buttons (a visually hidden checkbox inside, so the state is a real input). */
 .toggle{position:relative;display:inline-flex;align-items:center;height:var(--ctl-h);padding:0 12px;box-sizing:border-box;
   font-size:.875rem;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;cursor:pointer;user-select:none;
@@ -75,17 +47,32 @@ footer{font-size:.75rem;color:var(--muted)}
 .toggle:hover{border-color:var(--muted)}
 .toggle:has(input:checked){background:var(--accent);border-color:var(--accent);color:#fff}
 .toggle:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
-@media (prefers-reduced-motion:reduce){.toggle{transition:none}}
-/* Map box 2:1. Fully zoomed out, the flat map shows Arctic→Antarctic Circle,
+@media (prefers-reduced-motion:reduce){.switch input::after,.toggle{transition:none}}
+
+/* Map box, 2:1. Fully zoomed out, the flat map shows Arctic→Antarctic Circle,
    which is exactly twice as wide as tall, so it fills the box with no side strips. */
-#map{height:auto;aspect-ratio:2/1}
-.mapwrap:fullscreen #map{aspect-ratio:auto}
-/* overlays on the map */
 .mapwrap{position:relative}
-#map{background:var(--panel)}
+#map{width:100%;aspect-ratio:2/1;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+/* Fullscreen: the whole map area (map, badges, legend) fills the screen */
+.mapwrap:fullscreen{background:var(--panel)}
+.mapwrap:fullscreen #map{aspect-ratio:auto;height:100vh;border:0;border-radius:0;box-shadow:none}
+.mapwrap:fullscreen .badges{border-radius:0}
+
+/* Count badges on grouped markers */
 .badges{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden;border-radius:var(--radius)}
-.maplibregl-popup{z-index:2}   /* hover box above the count badges */
-/* Hover box expanded into a link list after clicking a grouped pin */
+.badge{position:absolute;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#e5484d;color:#fff;border:1.5px solid #fff;font:700 10px/13px var(--sans);text-align:center;transform:translate(-50%,-50%);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+/* Legend (click a row to hide/show) */
+.legend{position:absolute;left:10px;bottom:10px;z-index:2;display:grid;gap:2px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-size:12px}
+.legend button{all:unset;display:flex;align-items:center;gap:8px;padding:1px 2px;cursor:pointer;color:var(--fg);border-radius:3px}
+.legend button:focus-visible{outline:2px solid var(--accent)}
+.legend button.off{opacity:.4}
+.legend i{width:10px;height:10px;border-radius:50%;flex:none;margin:0 2px}
+.legend img{width:14px;height:auto;flex:none}
+.legend hr{border:0;border-top:1px solid var(--line);margin:3px 0}
+/* Hover box, and its link list after clicking a grouped marker */
+.maplibregl-popup{z-index:2}
+.maplibregl-popup-content{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font:12px/1.45 var(--sans);box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.maplibregl-popup-tip{display:none}
 .tip-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px}
 .tip-close{all:unset;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0 2px}
 .tip-close:hover,.tip-close:focus-visible{color:var(--fg)}
@@ -95,21 +82,6 @@ footer{font-size:.75rem;color:var(--muted)}
 .tip-list a .nm::after{content:" ↗";color:var(--accent)}
 .tip-list .st{font-size:11px;color:var(--muted)}
 .tip-list .nolink{color:var(--muted)}
-/* Fullscreen: the whole map area (map, badges, legend, link menu) fills the screen */
-.mapwrap:fullscreen{background:var(--panel)}
-.mapwrap:fullscreen #map{height:100vh;border:0;border-radius:0;box-shadow:none}
-.mapwrap:fullscreen .badges{border-radius:0}
-.badge{position:absolute;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#e5484d;color:#fff;border:1.5px solid #fff;font:700 10px/13px var(--sans);text-align:center;transform:translate(-50%,-50%);box-shadow:0 1px 2px rgba(0,0,0,.3)}
-.legend{position:absolute;left:10px;bottom:10px;z-index:2;display:grid;gap:2px;padding:6px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-size:12px}
-.legend button{all:unset;display:flex;align-items:center;gap:8px;padding:1px 2px;cursor:pointer;color:var(--fg);border-radius:3px}
-.legend button:focus-visible{outline:2px solid var(--accent)}
-.legend button.off{opacity:.4}
-.controls button.secondary{background:var(--bg);color:var(--fg);border-color:var(--line)}
-.legend i{width:10px;height:10px;border-radius:50%;flex:none;margin:0 2px}
-.legend img{width:14px;height:auto;flex:none}
-.legend hr{border:0;border-top:1px solid var(--line);margin:3px 0}
-.maplibregl-popup-content{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font:12px/1.45 var(--sans);box-shadow:0 4px 12px rgba(0,0,0,.15)}
-.maplibregl-popup-tip{display:none}
 .maplibregl-ctrl-reset{font-size:16px;line-height:1}
 </style>
 </head><body>
@@ -140,8 +112,8 @@ import * as maplibregl from "https://cdn.jsdelivr.net/npm/maplibre-gl@6.16.0/dis
 
 // Facility data lives in two files (one facility per line), edit those to add or
 // change facilities:
-//   data/facilities.geojson            storage rings (shared with the other map pages)
-//   data/free-electron-lasers.geojson  free-electron lasers (this page only)
+//   data/facilities.geojson            storage rings
+//   data/free-electron-lasers.geojson  free-electron lasers
 // Each feature has name, city, country, status, energy_GeV, url, and "srir": true
 // when it offers infrared (an IR beamline, or an IR/THz FEL). Rings also have
 // circumference_m; FELs have band (photon range).
@@ -247,7 +219,7 @@ map.touchZoomRotate.disableRotation();               // pinch zooms but doesn't 
 map.keyboard.disableRotation();
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-right");
 map.addControl(new maplibregl.FullscreenControl({container:document.querySelector(".mapwrap")}),"top-right");
-// Reset view (like Plotly's home button): world view, north up.
+// Reset view (⌂): world view, north up.
 map.addControl({
   onAdd(){const d=document.createElement("div");d.className="maplibregl-ctrl maplibregl-ctrl-group";
     d.innerHTML='<button type="button" class="maplibregl-ctrl-reset" title="Reset view" aria-label="Reset view">⌂</button>';
@@ -255,7 +227,7 @@ map.addControl({
   onRemove(){}
 },"top-right");
 
-// ---- Overlapping markers: same rule as the Plotly page ------------------------
+// ---- Overlapping markers -------------------------------------------------------
 // Markers whose centers are closer than ~half a marker size merge into one group,
 // led by the highest-priority facility (operating > planned > decommissioned,
 // then larger ring). Hover lists all, click opens a link menu, a badge shows the count.
@@ -432,7 +404,7 @@ function positionBadges(){
   });
 }
 
-// Legend: click a status or a facility type to hide/show it (like Plotly's legend).
+// Legend: click a status or a facility type to hide/show it.
 const legendIcons={};
 function legendIcon(kind,color){                      // small marker image for the legend (data URL)
   const key=kind+color;
@@ -522,7 +494,7 @@ document.querySelectorAll(".switch input").forEach(inp=>inp.addEventListener("ch
   const [off,on]=inp.parentElement.querySelectorAll("span");
   off.classList.toggle("on",!inp.checked);on.classList.toggle("on",inp.checked);
 }));
-// Switching projection starts from that projection's default view (as on the Plotly page).
+// Switching projection starts from that projection's default view.
 $("proj").addEventListener("change",()=>{
   map.setProjection({type:globe()?"globe":"mercator"});
   map.jumpTo({center:HOME.center,zoom:homeZoom(),bearing:0,pitch:0});
@@ -602,7 +574,7 @@ function download(blob,name){
 $("save").addEventListener("click",async()=>{
   $("save").disabled=true;
   try{
-    const blob=await savePNG(), name="synchrotrons-"+(globe()?"globe":"mercator")+".png";
+    const blob=await savePNG(), name="accelerators-"+(globe()?"globe":"mercator")+".png";
     download(blob,name); $("msg").textContent="";
   }catch(e){$("msg").textContent="Couldn't save the PNG"+(e&&e.message?": "+e.message:".")}
   finally{$("save").disabled=false}
@@ -643,7 +615,7 @@ async function dataZip(){
 }
 $("dldata").addEventListener("click",async()=>{
   $("dldata").disabled=true;
-  try{download(await dataZip(),"synchrotron-atlas-data.zip"); $("msg").textContent=""}
+  try{download(await dataZip(),"accelerator-atlas-data.zip"); $("msg").textContent=""}
   catch(e){$("msg").textContent="Couldn't build the data zip"+(e&&e.message?": "+e.message:".")}
   finally{$("dldata").disabled=false}
 });
