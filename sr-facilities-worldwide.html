@@ -52,6 +52,12 @@ button:disabled{opacity:.45;cursor:default}
 .msg{font-size:.8rem;color:var(--muted);line-height:var(--ctl-h)}
 #map{width:100%;height:clamp(360px,68vh,760px);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
 #map.link-hover *{cursor:pointer!important}
+.pop{position:fixed;z-index:10;min-width:200px;max-width:min(320px,calc(100vw - 16px));padding:4px 0;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.14);font-size:.875rem}
+.pop a,.pop .nolink{display:grid;gap:1px;padding:6px 12px;color:var(--fg);text-decoration:none}
+.pop a:hover,.pop a:focus-visible{background:var(--bg);outline:none}
+.pop a .nm::after{content:" ↗";color:var(--accent)}
+.pop .st{font-size:.75rem;color:var(--muted)}
+.pop .nolink{color:var(--muted)}
 footer{font-size:.75rem;color:var(--muted)}
 @media (max-width:560px){.push{margin-left:0}}
 </style>
@@ -80,6 +86,7 @@ footer{font-size:.75rem;color:var(--muted)}
       <span class="msg" id="msg" aria-live="polite"></span><button id="save" disabled>Save PNG</button></div>
   </div>
   <div id="map"></div>
+  <div id="pop" class="pop" hidden></div>
 </div>
 
 <script>/**
@@ -189,20 +196,87 @@ function sizeOf(f){
   const t=$("scale").checked?f.diam/dmax:Math.sqrt(f.diam/dmax);
   return 5+33*t;
 }
+// ---- Overlapping markers ----------------------------------------------------
+// Markers that overlap on screen at the current zoom/rotation are merged into
+// one group. Only the top facility is drawn (operating > planned >
+// decommissioned, then the larger ring), with a count badge; the hover lists
+// every member and a click opens a menu of their links. Groups are recomputed
+// after every zoom, pan, rotation and re-render (see regroup()).
+const STATUS_LABEL=Object.fromEntries(STATUSES.map(([k,l])=>[k,l]));
+const RANK={operating:0,planned:1,decommissioned:2};
+const byPriority=[...feats].sort((a,b)=>RANK[a.status]-RANK[b.status]||b.diam-a.diam);
+let groups=byPriority.map(f=>[f]), groupSig="";    // first plot: no merging yet
+function computeGroups(){
+  const sp=geoSub(), p=sp&&sp.projection;
+  if(!p) return null;
+  const pin=!$("marker").checked, xy=new Map();
+  // On the globe, skip points on the far side: they project onto the front.
+  const r=p.rotate(), clon=-r[0]*Math.PI/180, clat=-r[1]*Math.PI/180, globe=projType()==="orthographic";
+  for(const f of feats){
+    const lo=f.lon*Math.PI/180, la=f.lat*Math.PI/180;
+    if(globe&&Math.sin(la)*Math.sin(clat)+Math.cos(la)*Math.cos(clat)*Math.cos(lo-clon)<.02){xy.set(f,null);continue}
+    const q=p([f.lon,f.lat]);
+    xy.set(f,q&&isFinite(q[0])&&isFinite(q[1])?q:null);
+  }
+  // Merge only markers that mostly cover each other: centers closer than about
+  // half the mean marker size (pins a bit more). Partly overlapping ones stay.
+  const thr=(a,b)=>Math.max(6,(sizeOf(a)+sizeOf(b))/2*(pin?.6:.5));
+  const out=[], used=new Set();
+  for(const f of byPriority){                      // highest priority leads its group
+    if(used.has(f)) continue;
+    used.add(f);
+    const g=[f], a=xy.get(f);
+    if(a) for(const o of byPriority){
+      const b=xy.get(o);
+      if(used.has(o)||!b) continue;
+      if(Math.hypot(a[0]-b[0],a[1]-b[1])<thr(f,o)){g.push(o);used.add(o)}
+    }
+    out.push(g);
+  }
+  return out;
+}
+function regroup(){
+  const g=computeGroups();
+  if(!g) return;
+  const sig=g.filter(x=>x.length>1).map(x=>x.map(f=>f.name).join("+")).join("|");
+  if(sig===groupSig) return;
+  groups=g; groupSig=sig; closePop(); setTimeout(render);
+}
+function hoverHtml(g){
+  const ir=f=>$("srir").checked&&SRIR.has(f.name)?" · SR-IR":"";
+  if(g.length===1){
+    const f=g[0];
+    return `<b>${f.name}</b><br>${f.city}, ${f.country}<br>${STATUS_LABEL[f.status]}${ir(f)}<br>`+
+      `${f.energy_GeV} GeV · C = ${f.circumference_m} m · Ø ≈ ${f.diam.toFixed(0)} m`+
+      (URLS[f.name]?"<br><i>Click to open website ↗</i>":"");
+  }
+  return `<b>${g.length} facilities</b><br>`+
+    g.map(f=>`${f.name} — ${STATUS_LABEL[f.status]}, ${f.energy_GeV} GeV${ir(f)}`).join("<br>")+
+    "<br><i>Click for links ↗</i>";
+}
+
 function figure(){
   const pin=!$("marker").checked, byStatus=$("bystatus").checked, fg=css("--fg");
-  const hl=$("srir").checked, opac=f=>hl&&!SRIR.has(f.name)?.2:(pin?1:.85);
+  // A group is dimmed only if none of its members has an SR-IR beamline.
+  const hl=$("srir").checked, opac=g=>hl&&!g.some(f=>SRIR.has(f.name))?.2:(pin?1:.85);
+  const lead=groups.map((g,i)=>({f:g[0],g,i}));
   const traces=STATUSES.map(([k,label,tok])=>{
-    const pts=feats.filter(f=>f.status===k);
-    return{type:"scattergeo",mode:"markers",name:label+" ("+pts.length+")",
-      lon:pts.map(f=>f.lon),lat:pts.map(f=>f.lat),
-      customdata:pts.map(f=>[f.name,f.city,f.country,label,f.energy_GeV,f.circumference_m,f.diam.toFixed(0),
-        URLS[f.name]||"",URLS[f.name]?"<br><i>Click to open website ↗</i>":""]),
-      hovertemplate:"<b>%{customdata[0]}</b><br>%{customdata[1]}, %{customdata[2]}<br>%{customdata[3]}<br>%{customdata[4]} GeV · C = %{customdata[5]} m · Ø ≈ %{customdata[6]} m%{customdata[8]}<extra></extra>",
-      marker:{symbol:"circle",size:pts.map(sizeOf),color:byStatus?css(tok):css("--accent"),
-        opacity:pts.map(opac),line:{width:pin?1:.8,color:css("--panel")}},
+    const pts=lead.filter(x=>x.f.status===k);
+    return{type:"scattergeo",mode:"markers",name:label+" ("+feats.filter(f=>f.status===k).length+")",
+      lon:pts.map(x=>x.f.lon),lat:pts.map(x=>x.f.lat),
+      // customdata: [hover html, link (single facility only), group index]
+      customdata:pts.map(x=>[hoverHtml(x.g),x.g.length===1?(URLS[x.f.name]||""):"",x.i]),
+      hovertemplate:"%{customdata[0]}<extra></extra>",
+      marker:{symbol:"circle",size:pts.map(x=>sizeOf(x.f)),color:byStatus?css(tok):css("--accent"),
+        opacity:pts.map(x=>opac(x.g)),line:{width:pin?1:.8,color:css("--panel")}},
       showlegend:byStatus};
   });
+  // Count badges, drawn after (above) the markers. The invisible marker gives
+  // Plotly the size to offset the text from.
+  const multi=lead.filter(x=>x.g.length>1);
+  traces.push({type:"scattergeo",mode:"markers+text",lon:multi.map(x=>x.f.lon),lat:multi.map(x=>x.f.lat),
+    text:multi.map(x=>String(x.g.length)),textposition:"bottom right",textfont:{size:11,color:fg},
+    marker:{size:multi.map(x=>sizeOf(x.f)),opacity:0},hoverinfo:"skip",showlegend:false});
   const proj=projType();
   const s=SCHEMES[$("scheme").value]||{ocean:css("--ocean"),land:css("--land"),border:css("--border"),coast:css("--coast"),grid:css("--line")};
   return{data:traces,layout:{
@@ -303,7 +377,26 @@ function updateRes(){
   loadHiRes().then(()=>{if(wantRes()===50&&res!==50){res=50;render()}}).catch(()=>{});
 }
 
-function afterPlot(){lockVerticalPan();setResetView();updateRes()}
+function afterPlot(){lockVerticalPan();setResetView();updateRes();regroup()}
+
+// Link menu for a group of overlapping facilities.
+const pop=$("pop");
+function openPop(g,x,y){
+  pop.innerHTML=g.map(f=>{
+    const u=URLS[f.name], body=`<span class="nm">${f.name}</span><span class="st">${STATUS_LABEL[f.status]} · ${f.city}</span>`;
+    return u?`<a href="${u}" target="_blank" rel="noopener">${body}</a>`:`<div class="nolink">${body}</div>`;
+  }).join("");
+  pop.hidden=false;
+  const w=pop.offsetWidth, h=pop.offsetHeight;
+  pop.style.left=Math.max(8,Math.min(x+10,innerWidth-w-8))+"px";
+  pop.style.top=Math.max(8,Math.min(y+10,innerHeight-h-8))+"px";
+}
+function closePop(){if(pop) pop.hidden=true}
+document.addEventListener("click",e=>{if(!pop.hidden&&!pop.contains(e.target))closePop()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closePop()});
+pop.addEventListener("click",e=>{if(e.target.closest("a"))setTimeout(closePop)});
+gd.addEventListener("mousedown",closePop,true);
+window.addEventListener("scroll",closePop,{passive:true});
 
 let first=true;
 function render(){
@@ -313,11 +406,18 @@ function render(){
   if(first){
     gd.on("plotly_afterplot",afterPlot);
     // Facility links: click a marker to open its website; pointer cursor on hover.
+    // A single facility opens its site; a group opens a menu of links.
     gd.on("plotly_click",e=>{
-      const url=e.points&&e.points[0]&&e.points[0].customdata&&e.points[0].customdata[7];
-      if(url) window.open(url,"_blank","noopener");
+      const cd=e.points&&e.points[0]&&e.points[0].customdata, g=cd&&groups[cd[2]];
+      if(!g) return;
+      if(g.length===1){if(cd[1]) window.open(cd[1],"_blank","noopener");return}
+      const x=e.event.clientX, y=e.event.clientY;
+      setTimeout(()=>openPop(g,x,y));               // after this click finishes bubbling
     });
-    gd.on("plotly_hover",e=>gd.classList.toggle("link-hover",!!(e.points[0].customdata||[])[7]));
+    gd.on("plotly_hover",e=>{
+      const cd=e.points[0].customdata||[];
+      gd.classList.toggle("link-hover",!!cd[1]||(groups[cd[2]]||[]).length>1);
+    });
     gd.on("plotly_unhover",()=>gd.classList.remove("link-hover"));
     // Scroll/drag zoom ends with a relayout but no replot, so check here too.
     gd.on("plotly_relayout",e=>{
@@ -327,6 +427,8 @@ function render(){
       if(lat!==undefined) globeRot.lat=lat;
     });
     gd.on("plotly_relayout",e=>{if(Object.keys(e).some(k=>k.startsWith("geo.projection.scale")))updateRes()});
+    // Any zoom/pan/rotation can change which markers overlap.
+    gd.on("plotly_relayout",()=>{closePop();regroup()});
   }
   first=false;
 }
