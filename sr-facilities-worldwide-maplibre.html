@@ -105,7 +105,7 @@ footer{font-size:.75rem;color:var(--muted)}
       <label class="switch"><span class="on">Mercator</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label></div>
     <div class="ctl"><span>Marker</span>
       <label class="switch"><span class="on">Simple</span><input type="checkbox" role="switch" id="marker" aria-label="Fancy markers"><span>Fancy</span></label></div>
-    <label class="check"><input type="checkbox" id="bysize"> Size by ring diameter / FEL length</label>
+    <label class="check"><input type="checkbox" id="bysize" title="Ring diameter for storage rings, length for FELs"> Scale by size</label>
     <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
     <label class="check"><input type="checkbox" id="srir"> Highlight infrared</label>
     <div class="push"><span class="msg" id="msg" aria-live="polite"></span><button id="dldata" class="secondary">Download data</button><button id="save" disabled>Save PNG</button></div>
@@ -157,7 +157,7 @@ const KINDS=[["ring","Storage ring"],["fel","Free-electron laser"]];
 // Relative physical size, 0..1: ring diameter for storage rings, overall length
 // for FELs, each type relative to its own largest member (FELs reach ~3.4 km,
 // ~5× the largest ring diameter; a shared scale would shrink every ring to the
-// minimum). With "Size by …" on, markers scale linearly with it (see pinScale).
+// minimum). With "Scale by size" on, markers scale linearly with it (see pinScale).
 const lmax=Math.max(...feats.filter(f=>f.kind==="fel").map(f=>f.length_m||0));
 const sizeT=f=>f.kind==="fel"?(f.length_m||0)/lmax:f.diam/dmax;
 
