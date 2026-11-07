@@ -67,6 +67,15 @@ footer{font-size:.75rem;color:var(--muted)}
 .group{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:8px 14px}
 .group-title{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .group.push{margin-left:auto;gap:10px;align-items:center}
+/* On/off toggle buttons (a visually hidden checkbox inside, so the state is a real input). */
+.toggle{position:relative;display:inline-flex;align-items:center;height:var(--ctl-h);padding:0 12px;box-sizing:border-box;
+  font-size:.875rem;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;cursor:pointer;user-select:none;
+  transition:background-color .12s,border-color .12s,color .12s}
+.toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.toggle:hover{border-color:var(--muted)}
+.toggle:has(input:checked){background:var(--accent);border-color:var(--accent);color:#fff}
+.toggle:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.toggle{transition:none}}
 /* Map box 2:1. Fully zoomed out, the flat map shows Arctic→Antarctic Circle,
    which is exactly twice as wide as tall, so it fills the box with no side strips. */
 #map{height:auto;aspect-ratio:2/1}
@@ -112,11 +121,11 @@ footer{font-size:.75rem;color:var(--muted)}
     </div>
     <div class="group"><span class="group-title">Marker</span>
       <label class="switch"><span class="on">Simple</span><input type="checkbox" role="switch" id="marker" aria-label="Fancy markers"><span>Fancy</span></label>
-      <label class="check"><input type="checkbox" id="bysize" title="Ring diameter for storage rings, length for FELs"> Scale by size</label>
-      <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
-      <label class="check"><input type="checkbox" id="srir"> Highlight infrared</label>
+      <label class="toggle" title="Ring diameter for storage rings, length for FELs"><input type="checkbox" id="bysize">Scale by size</label>
+      <label class="toggle"><input type="checkbox" id="bystatus" checked>Color by status</label>
+      <label class="toggle"><input type="checkbox" id="srir">Highlight infrared</label>
     </div>
-    <div class="group push"><span class="msg" id="msg" aria-live="polite"></span><button id="dldata" class="secondary">Download data</button><button id="save" disabled>Save PNG</button></div>
+    <div class="group push"><span class="group-title">Download</span><span class="msg" id="msg" aria-live="polite"></span><button id="dldata" class="secondary" title="Facility data (zip of the two GeoJSON files)">Data</button><button id="save" title="Map image (PNG), 2000 px on the shorter side" disabled>Image</button></div>
   </div>
   <div class="mapwrap">
     <div id="map"></div>
