@@ -86,17 +86,6 @@ footer{font-size:.75rem;color:var(--muted)}
   <div class="controls">
     <div class="ctl"><span>Projection</span>
       <label class="switch"><span class="on">Mercator</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label></div>
-    <label class="ctl"><span>Tile style</span><select id="tiles">
-      <option value="osm">OpenStreetMap</option>
-      <option value="positron">Light (CARTO Positron)</option>
-      <option value="darkmatter">Dark (CARTO Dark Matter)</option>
-      <option value="voyager">Voyager (CARTO)</option>
-      <option value="positron-nl">Light, no labels</option>
-      <option value="darkmatter-nl">Dark, no labels</option>
-      <option value="voyager-nl">Voyager, no labels</option>
-      <option value="satellite">Satellite (Esri)</option>
-      <option value="satellite-labels">Satellite with labels</option>
-      <option value="blank">Blank</option></select></label>
     <label class="check"><input type="checkbox" id="bysize"> Size by ring diameter</label>
     <div class="ctl"><span>Size scale</span>
       <label class="switch"><span class="on">√ diameter</span><input type="checkbox" role="switch" id="scale" aria-label="Linear size scale" disabled><span>Linear</span></label></div>
@@ -207,33 +196,9 @@ function sizeOf(f){                                  // marker diameter in px (s
   return 5+33*t;
 }
 
-// ---- Tile styles (no API keys) ------------------------------------------------
-// OSM and Esri are raster tiles; CARTO is used through its vector GL styles
-// (its raster tiles now return an "API key required" image).
-const OSM_ATTR='© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
-const CARTO_ATTR=OSM_ATTR+' © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>';
-const ESRI_ATTR='Imagery © <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics, and the GIS User Community';
-const carto=name=>({url:`https://basemaps.cartocdn.com/gl/${name}-gl-style/style.json`,attr:CARTO_ATTR});
-const esri=(path,attr)=>({tiles:[`https://server.arcgisonline.com/ArcGIS/rest/services/${path}/MapServer/tile/{z}/{y}/{x}`],attr,maxzoom:19});
-const TILES={
-  "osm":[{tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],attr:OSM_ATTR,maxzoom:19}],
-  "positron":carto("positron"), "darkmatter":carto("dark-matter"), "voyager":carto("voyager"),
-  "positron-nl":carto("positron-nolabels"), "darkmatter-nl":carto("dark-matter-nolabels"), "voyager-nl":carto("voyager-nolabels"),
-  "satellite":[esri("World_Imagery",ESRI_ATTR)],
-  "satellite-labels":[esri("World_Imagery",ESRI_ATTR),esri("Reference/World_Boundaries_and_Places","Labels © Esri")],
-  "blank":[]
-};
+// ---- Map style: MapLibre's default demo style (vector, no API key) -----------
+const STYLE="https://demotiles.maplibre.org/style.json";
 const globe=()=>$("proj").checked;
-function styleFor(key){
-  if(!Array.isArray(TILES[key])) return TILES[key].url;          // vector style by URL
-  const s={version:8,sources:{},layers:[{id:"bg",type:"background",paint:{"background-color":key==="blank"?css("--panel"):"#aad3df"}}],
-    projection:{type:globe()?"globe":"mercator"}};
-  TILES[key].forEach((l,i)=>{
-    s.sources["tiles"+i]={type:"raster",tiles:l.tiles,tileSize:256,attribution:l.attr,maxzoom:l.maxzoom||20};
-    s.layers.push({id:"tiles"+i,type:"raster",source:"tiles"+i});
-  });
-  return s;
-}
 
 // ---- Map ----------------------------------------------------------------------
 // Default zoom: flat map ≈ full width; globe ≈ 90% of the box height
@@ -245,7 +210,7 @@ const homeZoom=()=>{
 };
 const HOME={center:[10,25]};
 const map=new maplibregl.Map({
-  container:"map", style:styleFor($("tiles").value), center:HOME.center, zoom:homeZoom(),
+  container:"map", style:STYLE, center:HOME.center, zoom:homeZoom(),
   attributionControl:{compact:true}, canvasContextAttributes:{preserveDrawingBuffer:true}   // needed for Save PNG
 });
 map.addControl(new maplibregl.NavigationControl({visualizePitch:false}),"top-right");
@@ -388,7 +353,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closePop()});
 pop.addEventListener("click",e=>{if(e.target.closest("a"))setTimeout(closePop)});
 window.addEventListener("scroll",closePop,{passive:true});
 
-// Every new style (initial or from the Tile style menu): apply the projection,
+// Once the style is loaded: apply the projection,
 // then add the facility layer on top.
 map.on("style.load",()=>{map.setProjection({type:globe()?"globe":"mercator"});addLayers();update()});
 map.on("move",positionBadges);
@@ -407,10 +372,9 @@ $("proj").addEventListener("change",()=>{
   map.jumpTo({center:HOME.center,zoom:homeZoom(),bearing:0,pitch:0});
   update();
 });
-$("tiles").addEventListener("change",()=>map.setStyle(styleFor($("tiles").value)));   // style.load re-adds markers
 $("bysize").addEventListener("change",()=>{$("scale").disabled=!$("bysize").checked;update()});
 ["scale","bystatus","srir"].forEach(id=>$(id).addEventListener("change",update));
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if($("tiles").value==="blank")map.setStyle(styleFor("blank"));else update()});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",update);
 
 // ---- Save PNG: map canvas + badges + attribution ------------------------------------
 async function savePNG(){
@@ -427,7 +391,7 @@ async function savePNG(){
     ctx.fillStyle="#fff"; ctx.font=`700 10px ${css("--sans")}`; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(el.textContent,x,y+.5);
   }
-  const t=TILES[$("tiles").value], attr=[...new Set((Array.isArray(t)?t:[t]).map(l=>l.attr.replace(/<[^>]+>/g,"")))].join(" · ");
+  const attr=(document.querySelector(".maplibregl-ctrl-attrib-inner")||{}).textContent||"";   // the style's own credits
   if(attr){
     ctx.font=`10px ${css("--sans")}`; ctx.textAlign="right"; ctx.textBaseline="bottom";
     const w=ctx.measureText(attr).width+10, W=src.clientWidth, H=src.clientHeight;
@@ -438,7 +402,7 @@ async function savePNG(){
 $("save").addEventListener("click",async()=>{
   $("save").disabled=true; $("msg").textContent="Rendering…";
   try{
-    const blob=await savePNG(), name="synchrotrons-"+(globe()?"globe":"mercator")+"-"+$("tiles").value+".png";
+    const blob=await savePNG(), name="synchrotrons-"+(globe()?"globe":"mercator")+".png";
     const u=URL.createObjectURL(blob), a=document.createElement("a"); a.href=u; a.download=name;
     document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
     $("msg").textContent="Saved "+name;
