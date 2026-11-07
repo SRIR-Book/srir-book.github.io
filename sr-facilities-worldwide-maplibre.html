@@ -103,6 +103,8 @@ footer{font-size:.75rem;color:var(--muted)}
   <div class="controls">
     <div class="ctl"><span>Projection</span>
       <label class="switch"><span class="on">Mercator</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label></div>
+    <div class="ctl"><span>Marker</span>
+      <label class="switch"><span class="on">Simple</span><input type="checkbox" role="switch" id="marker" aria-label="Fancy markers"><span>Fancy</span></label></div>
     <label class="check"><input type="checkbox" id="bysize"> Size by ring diameter / FEL length</label>
     <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
     <label class="check"><input type="checkbox" id="srir"> Highlight infrared</label>
@@ -282,6 +284,7 @@ function hoverHtml(g){
 // One icon per color, drawn on a canvas at 2× and tinted from the page's status
 // colors; icon-size scales it per marker. The image is 14.5 × 19 px; pins are
 // drawn at 0.8× that (≈ 11.6 × 15 px) at default size.
+const IMG_K=4;                                         // marker images drawn at 4× (sharp in 2000 px exports)
 const PIN=new Path2D("M13.5 0C6.04 0 0 6.04 0 13.5C0 21 13.5 36 13.5 36S27 21 27 13.5C27 6.04 20.96 0 13.5 0Z");   // 27 × 36, shorter point
 const PIN_W=14.5, PIN_H=19;
 const pinScale=f=>$("bysize").checked?.45+1.35*sizeT(f):.8;   // linear in diameter/length: 0.45×–1.8× (default 0.8×)
@@ -290,19 +293,35 @@ function shade(hex,k){                               // darken a #rrggbb color b
   const c=[n>>16,n>>8&255,n&255].map(v=>Math.round(v*(1-k)));
   return`rgb(${c.join(",")})`;
 }
-function pinImage(color){
-  const k=2, c=document.createElement("canvas"); c.width=29*k; c.height=38*k;
+function pinImage(color,whiteDot=false){            // whiteDot: FEL in "Simple" mode
+  const k=IMG_K, c=document.createElement("canvas"); c.width=29*k; c.height=38*k;
   const x=c.getContext("2d"); x.scale(k,k); x.translate(1,1);
   x.fillStyle=color; x.fill(PIN);
   x.lineWidth=1.2; x.strokeStyle=shade(color,.35); x.stroke(PIN);
-  x.beginPath(); x.arc(13.5,13.5,4.8,0,2*Math.PI); x.fillStyle=shade(color,.5); x.fill();
+  x.beginPath(); x.arc(13.5,13.5,4.8,0,2*Math.PI); x.fillStyle=whiteDot?"#fff":shade(color,.5); x.fill();
+  if(whiteDot){x.lineWidth=1;x.strokeStyle=shade(color,.5);x.stroke()}
   return x.getImageData(0,0,c.width,c.height);
 }
+// "Fancy" storage ring: a round marker with a white ring inside, centered on the location.
+const RING_S=18;                                       // css px at icon-size 1
+function ringImage(color){
+  const k=IMG_K, c=document.createElement("canvas"); c.width=c.height=RING_S*k;
+  const x=c.getContext("2d"); x.scale(k,k); const m=RING_S/2;
+  x.beginPath(); x.arc(m,m,m-1,0,2*Math.PI); x.fillStyle=color; x.fill();
+  x.lineWidth=1.2; x.strokeStyle=shade(color,.35); x.stroke();
+  x.beginPath(); x.arc(m,m,m*.48,0,2*Math.PI); x.lineWidth=1.8; x.strokeStyle="rgba(255,255,255,.95)"; x.stroke();
+  return x.getImageData(0,0,c.width,c.height);
+}
+// Marker style: "Simple" = map pins for everything (FELs with a white center dot);
+// "Fancy" = round ring markers for storage rings, laser pointers for FELs.
+const fancy=()=>$("marker").checked;
+const shapeOf=f=>fancy()?(f.kind==="fel"?"fel":"ring"):(f.kind==="fel"?"pinw":"pin");
+const IMAGE={pin:c=>pinImage(c),pinw:c=>pinImage(c,true),ring:ringImage,fel:felImage};
 // ---- FEL marker: a laser pointer whose red beam ends on the coordinate -------
 // Drawn on a 24 × 24 grid (css px at icon-size 1), body in the status color.
 const FEL_S=24, FEL_SPOT=[2.5,21.5];                  // beam spot = the facility position
 function felImage(color){
-  const k=2, c=document.createElement("canvas"); c.width=c.height=FEL_S*k;
+  const k=IMG_K, c=document.createElement("canvas"); c.width=c.height=FEL_S*k;
   const x=c.getContext("2d"); x.scale(k,k); x.lineCap="round";
   const [sx,sy]=FEL_SPOT;
   x.strokeStyle="rgba(255,255,255,.95)"; x.lineWidth=3.4; x.beginPath(); x.moveTo(sx,sy); x.lineTo(10.5,13.5); x.stroke();
@@ -319,21 +338,22 @@ function felImage(color){
   return x.getImageData(0,0,c.width,c.height);
 }
 // Screen box of a marker relative to its coordinate (css px), and where its count badge goes.
-const iconScale=f=>pinScale(f)*(f.kind==="fel"?1.25:1);   // laser pointers a bit larger than pins
+const iconScale=f=>pinScale(f)*(shapeOf(f)==="fel"?1.25:1);   // laser pointers a bit larger than pins
 function markerBox(f){
-  const s=iconScale(f);
-  if(f.kind==="fel"){const [sx,sy]=FEL_SPOT;return{left:-sx*s,right:(FEL_S-sx)*s,top:-sy*s,bottom:(FEL_S-sy)*s,badge:[(21-sx)*s,(3-sy)*s]}}
+  const s=iconScale(f), shape=shapeOf(f);
+  if(shape==="fel"){const [sx,sy]=FEL_SPOT;return{left:-sx*s,right:(FEL_S-sx)*s,top:-sy*s,bottom:(FEL_S-sy)*s,badge:[(21-sx)*s,(3-sy)*s]}}
+  if(shape==="ring"){const r=RING_S/2*s;return{left:-r,right:r,top:-r,bottom:r,badge:[r*.72,-r*.72]}}
   const w=PIN_W*s, h=PIN_H*s;
   return{left:-w/2,right:w/2,top:-h,bottom:0,badge:[w*.42,-h+w*.12]};
 }
 const pinColors={};                                  // icon name -> color it was drawn with
 function ensurePins(){
   const cols=[...STATUSES.map(([k,,t])=>[k,css(t)]),["accent",css("--accent")]];
-  const want=Object.fromEntries(cols.flatMap(([k,c])=>[["pin-"+k,c],["fel-"+k,c]]));
+  const want=Object.fromEntries(cols.flatMap(([k,c])=>Object.keys(IMAGE).map(sh=>[sh+"-"+k,c])));
   for(const [name,color] of Object.entries(want)){
     if(map.hasImage(name)&&pinColors[name]===color) continue;
-    const img=name.startsWith("fel-")?felImage(color):pinImage(color);
-    map.hasImage(name)?map.updateImage(name,img):map.addImage(name,img,{pixelRatio:2});
+    const img=IMAGE[name.split("-")[0]](color);
+    map.hasImage(name)?map.updateImage(name,img):map.addImage(name,img,{pixelRatio:IMG_K});
     pinColors[name]=color;
   }
 }
@@ -342,8 +362,8 @@ function featureCollection(){
   const byStatus=$("bystatus").checked, hl=$("srir").checked;
   return{type:"FeatureCollection",features:groups.map((g,i)=>{const f=g[0];return{type:"Feature",
     geometry:{type:"Point",coordinates:[f.lon,f.lat]},
-    properties:{gi:i,s:iconScale(f),icon:(f.kind==="fel"?"fel-":"pin-")+(byStatus?f.status:"accent"),
-      anchor:f.kind==="fel"?"top-left":"bottom",off:f.kind==="fel"?FEL_SPOT.map(v=>-v):[0,0],
+    properties:{gi:i,s:iconScale(f),icon:shapeOf(f)+"-"+(byStatus?f.status:"accent"),
+      anchor:{fel:"top-left",ring:"center"}[shapeOf(f)]||"bottom",off:shapeOf(f)==="fel"?FEL_SPOT.map(v=>-v):[0,0],
       op:hl&&!g.some(x=>SRIR.has(x.name))?.25:1,z:3-RANK[f.status]}}})};
 }
 function addLayers(){
@@ -400,7 +420,7 @@ const legendIcons={};
 function legendIcon(kind,color){                      // small marker image for the legend (data URL)
   const key=kind+color;
   if(!legendIcons[key]){
-    const img=kind==="fel"?felImage(color):pinImage(color), c=document.createElement("canvas");
+    const img=IMAGE[kind](color), c=document.createElement("canvas");
     c.width=img.width; c.height=img.height; c.getContext("2d").putImageData(img,0,0);
     legendIcons[key]=c.toDataURL();
   }
@@ -409,7 +429,7 @@ function legendIcon(kind,color){                      // small marker image for 
 function drawLegend(){
   const lg=$("legend");
   const btn=(k,icon,l)=>`<button type="button" data-k="${k}" class="${hidden.has(k)?"off":""}" aria-pressed="${!hidden.has(k)}">${icon}${l}</button>`;
-  const grey=css("--muted"), icon=k=>legendIcon(k,grey);
+  const grey=css("--muted"), icon=k=>legendIcon(shapeOf({kind:k}),grey);
   lg.innerHTML=($("bystatus").checked?STATUSES.map(([k,l,t])=>btn(k,`<i style="background:${css(t)}"></i>`,l)).join("")+'<hr>':"")+
     KINDS.map(([k,l])=>btn(k,`<img src="${icon(k)}" alt="">`,l)).join("");
 }
@@ -491,16 +511,16 @@ $("proj").addEventListener("change",()=>{
   map.jumpTo({center:HOME.center,zoom:homeZoom(),bearing:0,pitch:0});
   update();
 });
-["bysize","bystatus","srir"].forEach(id=>$(id).addEventListener("change",update));
+["bysize","bystatus","srir","marker"].forEach(id=>$(id).addEventListener("change",update));
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",update);
 
 // ---- Save PNG: map canvas + badges + attribution ------------------------------------
-// Export at 1000 px on the shorter side of the map area (flat map: cropped to the
+// Export at 2000 px on the shorter side of the map area (flat map: cropped to the
 // world when it is narrower than the box; globe: the whole box):
 // re-render the map at that pixel ratio, wait until all tiles are drawn, copy
 // the canvas, then restore the screen pixel ratio. Badges and credits are
 // painted on top in CSS px, scaled by the same factor.
-const EXPORT_SHORT_SIDE=1000;
+const EXPORT_SHORT_SIDE=2000;
 async function savePNG(){
   const src=map.getCanvas(), W=src.clientWidth, H=src.clientHeight;
   const r=contentRect(), cw=r.x1-r.x0, ch=r.y1-r.y0;     // flat map: crop away empty side strips
