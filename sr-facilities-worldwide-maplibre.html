@@ -62,10 +62,11 @@ h1{font-size:2rem;font-weight:700;letter-spacing:-.01em;margin:0;text-wrap:balan
 footer{font-size:.75rem;color:var(--muted)}
 @media (max-width:560px){.push{margin-left:0}}
 /* MapLibre version */
-/* Controls on one line: "Projection" / "Marker" sit before their switches. */
-.ctl.inline{display:flex;align-items:center;gap:8px}
-.ctl.inline>span{font-size:.875rem;letter-spacing:0;text-transform:none;color:var(--fg)}
-.controls{align-items:center}
+/* Controls: one row of three boxes (Projection | Marker | buttons) with a gap. */
+.controls{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;background:none;border:0;box-shadow:none;padding:0}
+.group{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:8px 14px}
+.group-title{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.group.push{margin-left:auto;gap:10px;align-items:center}
 /* Map box 2:1. Fully zoomed out, the flat map shows Arctic→Antarctic Circle,
    which is exactly twice as wide as tall, so it fills the box with no side strips. */
 #map{height:auto;aspect-ratio:2/1}
@@ -106,14 +107,16 @@ footer{font-size:.75rem;color:var(--muted)}
 
 <div class="wrap">
   <div class="controls">
-    <div class="ctl inline"><span>Projection</span>
-      <label class="switch"><span class="on">Mercator</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label></div>
-    <div class="ctl inline"><span>Marker</span>
-      <label class="switch"><span class="on">Simple</span><input type="checkbox" role="switch" id="marker" aria-label="Fancy markers"><span>Fancy</span></label></div>
-    <label class="check"><input type="checkbox" id="bysize" title="Ring diameter for storage rings, length for FELs"> Scale by size</label>
-    <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
-    <label class="check"><input type="checkbox" id="srir"> Highlight infrared</label>
-    <div class="push"><span class="msg" id="msg" aria-live="polite"></span><button id="dldata" class="secondary">Download data</button><button id="save" disabled>Save PNG</button></div>
+    <div class="group"><span class="group-title">Projection</span>
+      <label class="switch"><span class="on">Mercator</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label>
+    </div>
+    <div class="group"><span class="group-title">Marker</span>
+      <label class="switch"><span class="on">Simple</span><input type="checkbox" role="switch" id="marker" aria-label="Fancy markers"><span>Fancy</span></label>
+      <label class="check"><input type="checkbox" id="bysize" title="Ring diameter for storage rings, length for FELs"> Scale by size</label>
+      <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
+      <label class="check"><input type="checkbox" id="srir"> Highlight infrared</label>
+    </div>
+    <div class="group push"><span class="msg" id="msg" aria-live="polite"></span><button id="dldata" class="secondary">Download data</button><button id="save" disabled>Save PNG</button></div>
   </div>
   <div class="mapwrap">
     <div id="map"></div>
