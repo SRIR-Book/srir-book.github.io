@@ -103,9 +103,7 @@ footer{font-size:.75rem;color:var(--muted)}
   <div class="controls">
     <div class="ctl"><span>Projection</span>
       <label class="switch"><span class="on">Mercator</span><input type="checkbox" role="switch" id="proj" aria-label="Globe projection"><span>Globe</span></label></div>
-    <label class="check"><input type="checkbox" id="bysize"> Size by ring diameter</label>
-    <div class="ctl"><span>Size scale</span>
-      <label class="switch"><span class="on">√ diameter</span><input type="checkbox" role="switch" id="scale" aria-label="Linear size scale" disabled><span>Linear</span></label></div>
+    <label class="check"><input type="checkbox" id="bysize"> Size by ring diameter / FEL length</label>
     <label class="check"><input type="checkbox" id="bystatus" checked> Color by status</label>
     <label class="check"><input type="checkbox" id="srir"> Highlight infrared</label>
     <div class="push"><span class="msg" id="msg" aria-live="polite"></span><button id="dldata" class="secondary">Download data</button><button id="save" disabled>Save PNG</button></div>
@@ -154,11 +152,12 @@ const RANK={operating:0,planned:1,decommissioned:2};
 const hidden=new Set();                              // statuses and kinds ("ring"/"fel") switched off in the legend
 const KINDS=[["ring","Storage ring"],["fel","Free-electron laser"]];
 
-function sizeOf(f){                                  // marker diameter in px (same as the Plotly page)
-  if(!$("bysize").checked||f.kind!=="ring") return 11;   // FELs have no ring to size by
-  const t=$("scale").checked?f.diam/dmax:Math.sqrt(f.diam/dmax);
-  return 5+33*t;
-}
+// Relative physical size, 0..1: ring diameter for storage rings, overall length
+// for FELs, each type relative to its own largest member (FELs reach ~3.4 km,
+// ~5× the largest ring diameter; a shared scale would shrink every ring to the
+// minimum). With "Size by …" on, markers scale linearly with it (see pinScale).
+const lmax=Math.max(...feats.filter(f=>f.kind==="fel").map(f=>f.length_m||0));
+const sizeT=f=>f.kind==="fel"?(f.length_m||0)/lmax:f.diam/dmax;
 
 // ---- Map style ---------------------------------------------------------------
 // World overview: MapLibre's default demo style. From STREET_Z (past country
@@ -269,7 +268,7 @@ function hoverHtml(g){
   const ir=f=>$("srir").checked&&SRIR.has(f.name)?" · IR":"";
   if(g.length===1){
     const f=g[0];
-    const what=f.kind==="fel"?`Free-electron laser (${f.band}) · ${STATUS_LABEL[f.status]}${ir(f)}<br>${f.energy_GeV} GeV electron beam`
+    const what=f.kind==="fel"?`Free-electron laser (${f.band}) · ${STATUS_LABEL[f.status]}${ir(f)}<br>${f.energy_GeV} GeV electron beam${f.length_m?` · length ≈ ${f.length_m} m`:""}`
       :`${STATUS_LABEL[f.status]}${ir(f)}<br>${f.energy_GeV} GeV · C = ${f.circumference_m} m · Ø ≈ ${f.diam.toFixed(0)} m`;
     return `<b>${f.name}</b><br>${f.city}, ${f.country}<br>${what}`+(URLS[f.name]?"<br><i>Click to open website ↗</i>":"");
   }
@@ -285,7 +284,7 @@ function hoverHtml(g){
 // drawn at 0.8× that (≈ 11.6 × 15 px) at default size.
 const PIN=new Path2D("M13.5 0C6.04 0 0 6.04 0 13.5C0 21 13.5 36 13.5 36S27 21 27 13.5C27 6.04 20.96 0 13.5 0Z");   // 27 × 36, shorter point
 const PIN_W=14.5, PIN_H=19;
-const pinScale=f=>.8*Math.sqrt(sizeOf(f)/11);      // 0.8× base; ring-size pins grow gently (√)
+const pinScale=f=>$("bysize").checked?.45+1.35*sizeT(f):.8;   // linear in diameter/length: 0.45×–1.8× (default 0.8×)
 function shade(hex,k){                               // darken a #rrggbb color by k (0..1)
   const n=parseInt(hex.replace("#","").slice(0,6),16);
   const c=[n>>16,n>>8&255,n&255].map(v=>Math.round(v*(1-k)));
@@ -492,8 +491,7 @@ $("proj").addEventListener("change",()=>{
   map.jumpTo({center:HOME.center,zoom:homeZoom(),bearing:0,pitch:0});
   update();
 });
-$("bysize").addEventListener("change",()=>{$("scale").disabled=!$("bysize").checked;update()});
-["scale","bystatus","srir"].forEach(id=>$(id).addEventListener("change",update));
+["bysize","bystatus","srir"].forEach(id=>$(id).addEventListener("change",update));
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",update);
 
 // ---- Save PNG: map canvas + badges + attribution ------------------------------------
@@ -565,7 +563,7 @@ function download(blob,name){
   document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
 }
 $("save").addEventListener("click",async()=>{
-  $("save").disabled=true; $("msg").textContent="Rendering…";
+  $("save").disabled=true;
   try{
     const blob=await savePNG(), name="synchrotrons-"+(globe()?"globe":"mercator")+".png";
     download(blob,name); $("msg").textContent="";
