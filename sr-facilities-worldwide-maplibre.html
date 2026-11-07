@@ -240,10 +240,28 @@ const homeZoom=()=>{
                :Math.max(0,Math.log2(el.clientWidth/512)-.15);
 };
 const HOME={center:[10,25]};
+// Flat map limits (replaces MapLibre's default, which keeps the world filling
+// the whole box and so always crops the polar regions). Zoom out until the
+// whole Mercator world (±85°) fits with a small margin; if the world is smaller
+// than the box along an axis, keep it centered on that axis, otherwise stop
+// panning at its edge. No world copies are drawn (renderWorldCopies:false).
+const MAX_LAT=85.051129;
+const mercY=lat=>{const s=Math.sin(Math.max(-MAX_LAT,Math.min(MAX_LAT,lat))*Math.PI/180);return .5-Math.log((1+s)/(1-s))/(4*Math.PI)};
+const latFromY=y=>Math.atan(Math.sinh(Math.PI*(1-2*y)))*180/Math.PI;
+function constrainFlat(lngLat,zoom){
+  if(globe()) return{center:lngLat,zoom};
+  const el=$("map"), W=el.clientWidth, H=el.clientHeight;
+  zoom=Math.max(zoom,Math.log2(.95*Math.min(W,H)/512));
+  const ws=512*2**zoom;                                 // world size in px at this zoom
+  const axis=(v,view)=>ws<=view?.5:Math.min(Math.max(v,view/2/ws),1-view/2/ws);
+  const x=axis((lngLat.lng+180)/360,W), y=axis(mercY(lngLat.lat),H);
+  return{center:new maplibregl.LngLat(x*360-180,latFromY(y)),zoom};
+}
 const map=new maplibregl.Map({
   container:"map", style:STYLE, center:HOME.center, zoom:homeZoom(),
   attributionControl:{compact:true}, canvasContextAttributes:{preserveDrawingBuffer:true},   // needed for Save PNG
   renderWorldCopies:false,         // draw the world once, even fully zoomed out (no repeated continents)
+  transformConstrain:constrainFlat,   // …and still allow zooming out to the whole world (see above)
   dragRotate:false, pitchWithRotate:false, touchPitch:false, maxPitch:0   // north always up, no tilt
 });
 map.touchZoomRotate.disableRotation();               // pinch zooms but doesn't twist
