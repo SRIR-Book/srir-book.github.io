@@ -77,11 +77,11 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-
 .tip-close{all:unset;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0 2px}
 .tip-close:hover,.tip-close:focus-visible{color:var(--fg)}
 .tip-list{display:grid;gap:1px;margin:0 -6px}
-.tip-list a,.tip-list .nolink{display:grid;padding:4px 6px;border-radius:4px;color:var(--fg);text-decoration:none}
-.tip-list a:hover,.tip-list a:focus-visible{background:var(--bg);outline:none}
-.tip-list a .nm::after{content:" ↗";color:var(--accent)}
+.tip-list .row{display:grid;padding:4px 6px;border-radius:4px}
 .tip-list .st{font-size:11px;color:var(--muted)}
-.tip-list .nolink{color:var(--muted)}
+.tip-list .lk{display:flex;gap:12px;margin-top:2px}
+.tip-list .lk a{color:var(--accent);text-decoration:none}
+.tip-list .lk a:hover,.tip-list .lk a:focus-visible{text-decoration:underline;outline:none}
 .maplibregl-ctrl-reset{font-size:16px;line-height:1}
 </style>
 </head><body>
@@ -114,7 +114,7 @@ import * as maplibregl from "https://cdn.jsdelivr.net/npm/maplibre-gl@6.16.0/dis
 // change facilities:
 //   data/facilities.geojson            storage rings
 //   data/free-electron-lasers.geojson  free-electron lasers
-// Each feature has name, city, country, status, energy_GeV, url, and "srir": true
+// Each feature has name, city, country, status, energy_GeV, url, wikipedia, and "srir": true
 // when it offers infrared (an IR beamline, or an IR/THz FEL). Rings also have
 // circumference_m; FELs have band (photon range).
 // (Needs a web server: browsers block fetch() from pages opened as local files.)
@@ -131,6 +131,8 @@ try{
   throw e;
 }
 const URLS=Object.fromEntries(DATA.features.filter(f=>f.properties.url).map(f=>[f.properties.name,f.properties.url]));
+const WIKI=Object.fromEntries(DATA.features.filter(f=>f.properties.wikipedia).map(f=>[f.properties.name,f.properties.wikipedia]));
+const hasLinks=f=>!!(URLS[f.name]||WIKI[f.name]);
 const SRIR=new Set(DATA.features.filter(f=>f.properties.srir).map(f=>f.properties.name));   // offers infrared
 const STATUSES=[["operating","Operating","--op"],["planned","Planned","--plan"],["decommissioned","Decommissioned","--dec"]];
 
@@ -261,7 +263,7 @@ function hoverHtml(g){
     const f=g[0];
     const what=f.kind==="fel"?`Free-electron laser (${f.band}) · ${STATUS_LABEL[f.status]}${ir(f)}<br>${f.energy_GeV} GeV electron beam${f.length_m?` · length ≈ ${f.length_m} m`:""}`
       :`${STATUS_LABEL[f.status]}${ir(f)}<br>${f.energy_GeV} GeV · C = ${f.circumference_m} m · Ø ≈ ${f.diam.toFixed(0)} m`;
-    return `<b>${f.name}</b><br>${f.city}, ${f.country}<br>${what}`+(URLS[f.name]?"<br><i>Click to open website ↗</i>":"");
+    return `<b>${f.name}</b><br>${f.city}, ${f.country}<br>${what}`+(hasLinks(f)?"<br><i>Click for links</i>":"");
   }
   return `<b>${g.length} facilities</b><br>`+
     g.map(f=>`${f.name}${f.kind==="fel"?" (FEL)":""} — ${STATUS_LABEL[f.status]}, ${f.energy_GeV} GeV${ir(f)}`).join("<br>")+
@@ -431,10 +433,10 @@ $("legend").addEventListener("click",e=>{
 // ---- Interaction ----------------------------------------------------------------
 const tip=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:10,maxWidth:"340px"});
 const groupAt=e=>groups[e.features[0].properties.gi];
-// The hover box follows the pointer over pins. Clicking a single facility opens
-// its website; clicking a grouped pin "pins" the hover box in place and expands
-// it into a list of links, one per facility. It closes with ×, Esc, a click on
-// the map, or after choosing a link.
+// The hover box follows the pointer over pins. Clicking a pin "pins" the hover
+// box in place and shows its links (website, Wikipedia); for a grouped pin it
+// lists every facility with its links. It closes with ×, Esc, a click on the
+// map, or after choosing a link.
 let pinned=null;                                     // the group whose list is open
 function showTip(g,lngLat,html){
   const b=markerBox(g[0]), cx=(b.left+b.right)/2, cy=(b.top+b.bottom)/2;   // keep the box clear of the marker
@@ -442,12 +444,16 @@ function showTip(g,lngLat,html){
     "bottom-left":[b.right,b.top],"bottom-right":[b.left,b.top],"top-left":[b.right,b.bottom],"top-right":[b.left,b.bottom],"center":[cx,cy]});
   tip.setLngLat(lngLat).setHTML(html).addTo(map);
 }
+function linksHtml(f){
+  const a=(u,t)=>`<a href="${u}" target="_blank" rel="noopener">${t} ↗</a>`, u=URLS[f.name], w=WIKI[f.name];
+  const l=[u&&!(w&&u.includes("wikipedia.org"))&&a(u,"Website"), w&&a(w,"Wikipedia")].filter(Boolean);
+  return l.length?`<span class="lk">${l.join("")}</span>`:'<span class="st">No links</span>';
+}
 function listHtml(g){
-  return `<div class="tip-head"><b>${g.length} facilities</b><button type="button" class="tip-close" aria-label="Close">×</button></div>`+
-    '<div class="tip-list">'+g.map(f=>{
-      const u=URLS[f.name], body=`<span class="nm">${f.name}</span><span class="st">${f.kind==="fel"?"FEL · ":""}${STATUS_LABEL[f.status]} · ${f.city} · ${f.energy_GeV} GeV</span>`;
-      return u?`<a href="${u}" target="_blank" rel="noopener">${body}</a>`:`<div class="nolink">${body}</div>`;
-    }).join("")+"</div>";
+  const one=g.length===1;
+  return `<div class="tip-head"><b>${one?g[0].name:g.length+" facilities"}</b><button type="button" class="tip-close" aria-label="Close">×</button></div>`+
+    '<div class="tip-list">'+g.map(f=>`<div class="row">${one?"":`<span class="nm">${f.name}</span>`}`+
+      `<span class="st">${f.kind==="fel"?"FEL · ":""}${STATUS_LABEL[f.status]} · ${f.city} · ${f.energy_GeV} GeV</span>${linksHtml(f)}</div>`).join("")+"</div>";
 }
 function unpin(){if(pinned){pinned=null;tip.remove()}}
 map.on("mousemove","fac",e=>{
@@ -455,13 +461,13 @@ map.on("mousemove","fac",e=>{
   const g=groupAt(e);
   if(!g) return;
   showTip(g,[g[0].lon,g[0].lat],hoverHtml(g));
-  map.getCanvas().style.cursor=g.length>1||URLS[g[0].name]?"pointer":"";
+  map.getCanvas().style.cursor=g.length>1||hasLinks(g[0])?"pointer":"";
 });
 map.on("mouseleave","fac",()=>{map.getCanvas().style.cursor="";if(!pinned) tip.remove()});
 map.on("click",e=>{
   const hit=map.queryRenderedFeatures(e.point,{layers:["fac"]})[0], g=hit&&groups[hit.properties.gi];
   if(!g){unpin();return}                               // click on the map: close the list
-  if(g.length===1){unpin();const u=URLS[g[0].name];if(u) window.open(u,"_blank","noopener");return}
+  if(g.length===1&&!hasLinks(g[0])){unpin();return}
   openList(g);
   map.getCanvas().style.cursor="";
 });
@@ -476,7 +482,7 @@ function openList(g){
 function refreshPinned(){
   if(!pinned) return;
   const g=groups.find(x=>x[0]===pinned[0]);
-  if(!g||g.length<2){unpin();return}
+  if(!g||(g.length<2&&pinned.length>1)){unpin();return}
   if(g.length!==pinned.length||g.some((f,i)=>f!==pinned[i])) openList(g); else pinned=g;
 }
 document.addEventListener("keydown",e=>{if(e.key==="Escape")unpin()});
